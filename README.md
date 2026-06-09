@@ -14,6 +14,23 @@ push every change to QLab at once over OSC.
 
 ---
 
+## Download (easiest — no setup)
+
+**Apple Silicon Macs (M1/M2/M3/M4):** download the ready-made app — nothing else
+to install:
+
+**➡ https://github.com/JLMusicAcademy/qlab-flash/releases/download/macos-app/QLab-Flash.dmg**
+
+1. Open the downloaded **QLab-Flash.dmg**.
+2. In the window that appears, drag **QLab Flash** onto the **Applications** folder.
+3. First launch only: **right-click** the app in Applications → **Open** → **Open**
+   (it isn't Apple-signed, so this one-time step tells macOS to trust it).
+
+That's the whole install — no Python, Homebrew, Terminal, or git required. A new
+`.dmg` is rebuilt automatically whenever the app changes.
+
+---
+
 ## Quick start
 
 ```bash
