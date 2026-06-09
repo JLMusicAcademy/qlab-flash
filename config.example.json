@@ -1,0 +1,18 @@
+{
+  "_comment": "Copy this to ~/.qlab-flash.json (or pass --config PATH) to override defaults. QLab Flash also writes your last-used host/port/passcode here automatically.",
+
+  "qlab_host": "127.0.0.1",
+  "qlab_port": 53000,
+  "listen_port": 0,
+  "passcode": "",
+
+  "mic_count": 32,
+
+  "osc_message_property": "customString",
+  "channel_pattern": "^\\s*/ch/0*(?P<chan>\\d{1,2})/mix/on(?:\\s+(?P<state>\\d+))?\\s*$",
+  "write_template": "/ch/{chan:02d}/mix/on {state}",
+  "unmuted_value": 1,
+  "muted_value": 0,
+
+  "reply_timeout": 5.0
+}
