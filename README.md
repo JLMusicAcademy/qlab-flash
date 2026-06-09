@@ -84,10 +84,28 @@ QLab Flash assumes the common QLab→X32 structure:
 - **Each row is a top-level cue** in the cue list — typically a **Group cue**
   for a given look/moment ("Cue 12 — Top of Act 2").
 - **Each mic is a Network (OSC) cue** somewhere inside that group whose message
-  tells the X32 to turn a channel on or off, e.g. `/ch/03/mix/on 1`.
+  tells the X32 to turn a channel on or off, e.g. `/ch/03/mix/on 1`. The mic
+  cues can be **nested** — e.g. inside a "Mics" sub-group alongside your audio /
+  lights / video cues. QLab Flash searches the whole subtree, at any depth, so
 
-QLab Flash scans each group for those per-channel messages, maps them onto the
+  ```
+  Cue 12  (group)            -> a row
+    ├ Mics (group)
+    │   ├ Ch 1 on            -> mic column 1
+    │   ├ Ch 2 on            -> mic column 2
+    │   └ …
+    ├ Audio                  -> ignored
+    ├ Lights                 -> ignored
+    └ Video                  -> ignored
+  ```
+
+  works out of the box.
+
+QLab Flash scans each cue for those per-channel messages, maps them onto the
 32 mic columns, and on Submit writes the message back with the new on/off value.
+Standalone, non-mic cues sprinkled between your cues (a memo, a lone audio cue)
+have no mics, so they're hidden by default — tick **"Show cues with no mics"**
+in the top bar if you want to see them.
 
 **It updates existing per-channel cues; it does not create new ones.** If a cue
 has no Network cue for, say, mic 7, that cell is shown dimmed and is skipped on
@@ -110,6 +128,8 @@ QLab Flash also saves your last host/port/passcode there automatically.
 | `qlab_host` | `127.0.0.1` | QLab's IP (use the Mac's own IP if QLab is elsewhere). |
 | `qlab_port` | `53000` | QLab's OSC receive port (don't change unless you must). |
 | `mic_count` | `32` | Number of mic columns. |
+| `show_empty_rows` | `false` | Show top-level cues that contain no mics. |
+| `mics_group_name` | `""` | If set (e.g. `"Mics"`), only scan the subtree of a group with this name — handy if another sub-group contains stray `/ch/...` messages. Empty = scan the whole cue. |
 | `osc_message_property` | `customString` | The QLab cue property holding a network cue's OSC text. If your QLab build reports it under another name, set it here. |
 | `channel_pattern` | see file | Regex with named groups `chan` and `state` used to recognise a mic cue and read its channel + on/off value. |
 | `write_template` | `/ch/{chan:02d}/mix/on {state}` | How a mic cue's message is written back. |

@@ -7,8 +7,8 @@ from typing import Optional
 from PySide6.QtCore import Qt, QObject, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QHeaderView, QLabel, QMainWindow, QMessageBox,
-    QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QLabel, QMainWindow,
+    QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
 from ..config import Config
@@ -54,6 +54,11 @@ class MainWindow(QMainWindow):
         self.cuelist_combo = QComboBox()
         self.cuelist_combo.currentIndexChanged.connect(self._on_cuelist_changed)
         top.addWidget(self.cuelist_combo, 1)
+
+        self.empty_check = QCheckBox("Show cues with no mics")
+        self.empty_check.setChecked(self.config.show_empty_rows)
+        self.empty_check.toggled.connect(self._on_show_empty_toggled)
+        top.addWidget(self.empty_check)
 
         self.reload_btn = QPushButton("Reload")
         self.reload_btn.clicked.connect(self._reload)
@@ -154,6 +159,11 @@ class MainWindow(QMainWindow):
     def _reload(self) -> None:
         idx = max(0, self.cuelist_combo.currentIndex())
         self._load_grid(idx)
+
+    def _on_show_empty_toggled(self, checked: bool) -> None:
+        self.config.show_empty_rows = checked
+        if self.table_model is not None:
+            self._reload()
 
     def _load_grid(self, index: int) -> None:
         if self._has_unsaved() and not self._confirm_discard():

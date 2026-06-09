@@ -71,6 +71,57 @@ def test_mark_committed_resets_dirty():
     assert m.dirty_writes() == []
 
 
+def test_nested_mics_group_and_empty_row_filtering():
+    m = make_model()
+    cues = [
+        # A real cue: group -> Mics group (32) + non-mic siblings.
+        Cue(uid="cue1", number="1", name="Cue 1", type="Group", children=[
+            Cue(uid="mics1", number="", name="Mics", type="Group", children=[
+                Cue(uid="n1", number="", name="Ch1", type="Network"),
+                Cue(uid="n2", number="", name="Ch2", type="Network"),
+            ]),
+            Cue(uid="lx1", number="", name="Lights", type="Network"),
+        ]),
+        # A standalone cue sprinkled between — no mics.
+        Cue(uid="note1", number="", name="Note", type="Memo"),
+    ]
+    texts = {
+        "n1": "/ch/01/mix/on 1",
+        "n2": "/ch/02/mix/on 0",
+        "lx1": "/eos/chan/1/out 100",  # non-mic, must be ignored
+    }
+    rows = m.build(cues, lambda uid: texts.get(uid))
+    # The standalone Note cue is dropped; only the real cue remains.
+    assert len(rows) == 1
+    assert rows[0].label == "1 Cue 1"
+    assert set(rows[0].cells) == {1, 2}  # mics found despite nesting
+
+    # show_empty keeps the empty standalone cue as a row.
+    rows = m.build(cues, lambda uid: texts.get(uid), show_empty=True)
+    assert len(rows) == 2
+
+
+def test_mics_group_name_filter_restricts_search():
+    m = make_model()
+    cues = [Cue(uid="cue1", number="1", name="Cue 1", type="Group", children=[
+        Cue(uid="mics1", number="", name="Mics", type="Group", children=[
+            Cue(uid="n1", number="", name="Ch1", type="Network"),
+        ]),
+        # A stray mic-looking message OUTSIDE the Mics group.
+        Cue(uid="stray", number="", name="FX", type="Network"),
+    ])]
+    texts = {"n1": "/ch/01/mix/on 1", "stray": "/ch/05/mix/on 1"}
+
+    # No filter: both are picked up.
+    rows = m.build(cues, lambda uid: texts.get(uid))
+    assert set(rows[0].cells) == {1, 5}
+    # With filter: only the one inside the "Mics" group.
+    rows = m.build(cues, lambda uid: texts.get(uid), mics_group_name="Mics")
+    assert set(rows[0].cells) == {1}
+    # candidate_uids honours the filter too.
+    assert m.candidate_uids(cues, mics_group_name="Mics") == ["n1"]
+
+
 def test_leaf_uids_skips_containers():
     cue = Cue(uid="g1", number="1", name="L1", type="Group", children=[
         Cue(uid="n1", number="", name="", type="Network"),

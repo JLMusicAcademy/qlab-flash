@@ -38,10 +38,12 @@ def test_load_grid_and_submit(mock_and_client):
     session = WorkspaceSession(client, WORKSPACE_ID, config)
 
     model = session.load_grid()
-    assert len(model.rows) == 4               # 4 looks
-    # Every row should have all 32 mic cells backed by real cues.
+    assert len(model.rows) == 4               # 4 cues (standalone notes hidden)
+    # Every row should have all 32 mic cells backed by real cues, even though
+    # the mics live in a nested "Mics" group alongside audio/lights siblings.
     for row in model.rows:
         assert len(row.cells) == 32
+        assert row.label.startswith(("1 Cue", "2 Cue", "3 Cue", "4 Cue"))
 
     # Flip channel 5 in look 1 and submit.
     target = model.rows[0].cells[5]

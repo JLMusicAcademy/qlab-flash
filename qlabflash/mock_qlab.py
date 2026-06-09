@@ -28,25 +28,49 @@ def _make_show(num_looks: int = 6, mic_count: int = 32):
 
     list_cues = []
     for look in range(1, num_looks + 1):
-        group_uid = f"group-{look}"
-        children = []
+        # 32 mic cues live inside a nested "Mics" group, mirroring a typical
+        # show: Cue N (group) -> { Mics (group of 32), Audio, Lights, Video }.
+        mic_children = []
         for chan in range(1, mic_count + 1):
             uid = f"net-{look}-{chan}"
             # Open mics: a rotating handful per look, everything else muted.
             on = 1 if (chan % num_looks) == (look % num_looks) else 0
             texts[uid] = f"/ch/{chan:02d}/mix/on {on}"
-            children.append({
+            mic_children.append({
                 "uniqueID": uid,
                 "number": f"{look}.{chan}",
                 "name": f"Ch {chan} {'ON' if on else 'OFF'}",
                 "type": "Network",
             })
-        list_cues.append({
-            "uniqueID": group_uid,
-            "number": str(look),
-            "name": f"Look {look}",
+        mics_group = {
+            "uniqueID": f"mics-{look}",
+            "number": "",
+            "name": "Mics",
             "type": "Group",
-            "cues": children,
+            "cues": mic_children,
+        }
+        # Non-mic siblings inside the cue group (must be ignored by the grid).
+        siblings = [
+            {"uniqueID": f"aud-{look}", "number": "", "name": "Audio",
+             "type": "Audio"},
+            {"uniqueID": f"lx-{look}", "number": "", "name": "Lights",
+             "type": "Network"},
+        ]
+        texts[f"lx-{look}"] = "/eos/chan/1/out 100"  # non-mic OSC, won't match
+        list_cues.append({
+            "uniqueID": f"group-{look}",
+            "number": str(look),
+            "name": f"Cue {look}",
+            "type": "Group",
+            "cues": [mics_group] + siblings,
+        })
+        # A standalone non-group cue sprinkled between cues (should be hidden,
+        # since it has no mics).
+        list_cues.append({
+            "uniqueID": f"note-{look}",
+            "number": "",
+            "name": f"Note {look}",
+            "type": "Memo",
         })
 
     cue_lists.append({

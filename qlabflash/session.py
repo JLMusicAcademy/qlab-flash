@@ -36,17 +36,20 @@ class WorkspaceSession:
         cue_list = self.cue_lists[min(cue_list_index, len(self.cue_lists) - 1)]
         top_level = cue_list.children
 
-        # Gather every leaf cue under this list, then fetch their OSC messages.
-        leaf_uids: List[str] = []
-        for cue in top_level:
-            leaf_uids.extend(cue.leaf_uids())
+        # Fetch the OSC text of every candidate mic cue (honouring the optional
+        # mics-group filter), then build the grid.
+        leaf_uids = self.model.candidate_uids(
+            top_level, mics_group_name=self.config.mics_group_name)
         if progress:
             progress(f"Reading {len(leaf_uids)} cues...")
 
         prop = self.config.osc_message_property
         texts = self.client.get_cue_properties(self.workspace_id, leaf_uids, prop)
 
-        self.model.build(top_level, lambda uid: texts.get(uid))
+        self.model.build(
+            top_level, lambda uid: texts.get(uid),
+            show_empty=self.config.show_empty_rows,
+            mics_group_name=self.config.mics_group_name)
         return self.model
 
     # -- submitting ---------------------------------------------------------

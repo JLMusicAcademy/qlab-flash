@@ -122,15 +122,51 @@ class GridModel:
         return chan, unmuted
 
     # -- Building the grid -------------------------------------------------
-    def build(self, top_level_cues: List[Cue], get_text: Callable[[str], Optional[str]]):
+    def _mic_search_space(self, top_cue: Cue, name_filter: str):
+        """Yield the cues to scan for mics within one top-level cue.
+
+        With no filter we scan the whole subtree (mics may be nested in a
+        "Mics" group, which ``walk`` reaches at any depth). With a filter we
+        restrict to the subtree(s) of any container whose name matches, which
+        avoids ever misreading a stray message in another sub-group.
+        """
+        if not name_filter:
+            yield from top_cue.walk()
+            return
+        for node in top_cue.walk():
+            if node.is_container and node.name.strip().lower() == name_filter:
+                yield from node.walk()
+
+    def candidate_uids(self, top_level_cues: List[Cue],
+                       mics_group_name: str = "") -> List[str]:
+        """UIDs whose OSC text must be fetched to populate the grid.
+
+        Honours the mics-group filter so we don't query unrelated audio/lights/
+        video cues when the filter is set.
+        """
+        name_filter = (mics_group_name or "").strip().lower()
+        uids: List[str] = []
+        for cue in top_level_cues:
+            for node in self._mic_search_space(cue, name_filter):
+                if not node.is_container:
+                    uids.append(node.uid)
+        return uids
+
+    def build(self, top_level_cues: List[Cue], get_text: Callable[[str], Optional[str]],
+              show_empty: bool = False, mics_group_name: str = ""):
         """Populate ``self.rows`` from the chosen cue list's top-level cues.
 
-        ``get_text(uid)`` returns a cue's OSC message text (or None).
+        ``get_text(uid)`` returns a cue's OSC message text (or None). Each
+        top-level cue (typically a Group like "Cue 12") becomes a row; mic cues
+        anywhere in its subtree fill the columns. Top-level cues with no mics
+        (standalone audio/lights/memo cues sprinkled between the real cues) are
+        dropped unless ``show_empty`` is set.
         """
+        name_filter = (mics_group_name or "").strip().lower()
         rows: List[CueRow] = []
         for cue in top_level_cues:
             row = CueRow(cue_uid=cue.uid, number=cue.number, name=cue.name)
-            for descendant in cue.walk():
+            for descendant in self._mic_search_space(cue, name_filter):
                 if descendant.is_container:
                     continue
                 parsed = self.parse_channel(get_text(descendant.uid) or "")
@@ -144,6 +180,8 @@ class GridModel:
                     original_unmuted=state,
                     unmuted=state,
                 )
+            if not row.cells and not show_empty:
+                continue
             rows.append(row)
         self.rows = rows
         return rows

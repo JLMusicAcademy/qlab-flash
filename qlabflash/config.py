@@ -29,6 +29,15 @@ class Config:
     # --- Mic grid ----------------------------------------------------------
     mic_count: int = 32
 
+    # Hide top-level cues that contain no mics (e.g. standalone audio/lights/
+    # video/memo cues sprinkled between the real cues).
+    show_empty_rows: bool = False
+
+    # Optional: restrict the mic search to the subtree of a group with this
+    # name (e.g. "Mics"). Empty means scan each cue's whole subtree, which is
+    # safe because matching is by OSC message anyway.
+    mics_group_name: str = ""
+
     # --- How mic state is stored in QLab cues ------------------------------
     # The QLab cue property that holds a network cue's outgoing OSC text. This
     # has historically been "customString". If your QLab build reports the
