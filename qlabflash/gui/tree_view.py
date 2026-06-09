@@ -1,33 +1,33 @@
-"""The spreadsheet widget: a QTableView tuned for mic-checkbox editing.
+"""The worksheet widget: a QTreeView tuned for mic-checkbox editing + renaming.
 
-Dragging across cells rubber-band-selects a rectangular block (standard
-QTableView behaviour with item selection). Selected cells can then be flipped en
-masse from the toolbar, the right-click menu, or the keyboard:
+The left column shows QLab's cue hierarchy (expand/collapse with the arrows);
+double-click a name to rename it. The mic columns hold checkboxes. Dragging
+across cells rubber-band-selects a rectangular block, which can then be flipped
+en masse from the toolbar, the right-click menu, or the keyboard:
 
-* Space / X  -> toggle
-* Enter / 1  -> unmute (check)
-* 0 / Delete -> mute (uncheck)
+* Space / X  -> toggle    * Enter / 1 -> unmute (check)    * 0 / Delete -> mute
 """
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import QAbstractItemView, QMenu, QTableView
+from PySide6.QtWidgets import QAbstractItemView, QMenu, QTreeView
 
 
-class MicTableView(QTableView):
+class CueTreeView(QTreeView):
     selectionChangedCount = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectItems)
-        # Single click toggles the box; drag selects a region without toggling.
-        self.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.setUniformRowHeights(True)
+        self.setAllColumnsShowFocus(True)
+        self.setExpandsOnDoubleClick(False)  # double-click edits the name instead
+        self.setEditTriggers(QAbstractItemView.DoubleClicked
+                             | QAbstractItemView.EditKeyPressed)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._context_menu)
-        self.setShowGrid(True)
-        self.setCornerButtonEnabled(False)
 
     # -- bulk helpers -------------------------------------------------------
     def _selected(self):
@@ -35,18 +35,18 @@ class MicTableView(QTableView):
 
     def set_selected(self, unmuted: bool) -> int:
         model = self.model()
-        if model is None:
-            return 0
-        return model.set_cells(self._selected(), unmuted)
+        return model.set_cells(self._selected(), unmuted) if model else 0
 
     def toggle_selected(self) -> int:
         model = self.model()
-        if model is None:
-            return 0
-        return model.toggle_cells(self._selected())
+        return model.toggle_cells(self._selected()) if model else 0
 
     # -- input --------------------------------------------------------------
     def keyPressEvent(self, event):
+        # Don't hijack keys while a name editor is open.
+        if self.state() == QAbstractItemView.EditingState:
+            super().keyPressEvent(event)
+            return
         key = event.key()
         if key in (Qt.Key_Space, Qt.Key_X):
             if self.toggle_selected():
@@ -61,7 +61,6 @@ class MicTableView(QTableView):
 
     def selectionChanged(self, selected, deselected):
         super().selectionChanged(selected, deselected)
-        # Count only checkable mic cells for the status bar.
         count = sum(1 for i in self._selected() if i.column() != 0)
         self.selectionChangedCount.emit(count)
 

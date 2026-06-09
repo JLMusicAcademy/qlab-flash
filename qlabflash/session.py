@@ -28,7 +28,7 @@ class WorkspaceSession:
 
     def load_grid(self, cue_list_index: int = 0,
                   progress: Optional[Callable[[str], None]] = None) -> GridModel:
-        """Read the mic state for every top-level cue in a cue list."""
+        """Read the mic state for a cue list and build the worksheet tree."""
         if not self.cue_lists:
             self.fetch_cue_lists()
         if not self.cue_lists:
@@ -36,38 +36,19 @@ class WorkspaceSession:
         cue_list = self.cue_lists[min(cue_list_index, len(self.cue_lists) - 1)]
         top_level = cue_list.children
 
-        # Fetch the OSC text of every candidate mic cue (honouring the optional
-        # mics-group filter), then build the grid.
-        leaf_uids = self.model.candidate_uids(
-            top_level, mics_group_name=self.config.mics_group_name)
+        # Fetch the OSC text of every leaf cue (the mic-cue candidates), then
+        # build the hierarchical worksheet.
+        leaf_uids = self.model.candidate_uids(top_level)
         if progress:
             progress(f"Reading {len(leaf_uids)} cues...")
 
         prop = self.config.osc_message_property
         texts = self.client.get_cue_properties(self.workspace_id, leaf_uids, prop)
 
-        self.model.build(
-            top_level, lambda uid: texts.get(uid),
-            show_empty=self.config.show_empty_rows,
-            mics_group_name=self.config.mics_group_name)
+        self.model.build_tree(top_level, lambda uid: texts.get(uid))
         return self.model
 
     # -- renaming cues ------------------------------------------------------
-    def all_cues_flat(self) -> List[tuple]:
-        """Every cue in the workspace as ``(depth, Cue)``, in document order."""
-        out: List[tuple] = []
-
-        def walk(cue: Cue, depth: int):
-            out.append((depth, cue))
-            for child in cue.children:
-                walk(child, depth + 1)
-
-        if not self.cue_lists:
-            self.fetch_cue_lists()
-        for cue_list in self.cue_lists:
-            walk(cue_list, 0)
-        return out
-
     def rename_cues(self, changes: List[tuple],
                     progress: Optional[Callable[[int, int], None]] = None) -> int:
         """Apply ``(cue_uid, new_name)`` renames to QLab. Returns the count."""
@@ -80,14 +61,27 @@ class WorkspaceSession:
 
     # -- submitting ---------------------------------------------------------
     def submit(self, only_dirty: bool = True,
-               progress: Optional[Callable[[int, int], None]] = None) -> int:
-        """Send mic-state changes to QLab. Returns the number of cues written."""
-        writes = self.model.dirty_writes() if only_dirty else self.model.all_writes()
+               progress: Optional[Callable[[int, int], None]] = None) -> tuple:
+        """Push mic-state and cue-name changes to QLab.
+
+        Returns ``(mic_count, name_count)``. Mic changes honour ``only_dirty``;
+        cue-name changes are always just the edited ones.
+        """
+        mic_writes = (self.model.dirty_writes() if only_dirty
+                      else self.model.all_writes())
+        name_writes = self.model.name_writes()
         prop = self.config.osc_message_property
-        total = len(writes)
-        for i, (uid, message) in enumerate(writes, start=1):
+        total = len(mic_writes) + len(name_writes)
+        done = 0
+        for uid, message in mic_writes:
             self.client.set_cue_property(self.workspace_id, uid, prop, message)
+            done += 1
             if progress:
-                progress(i, total)
+                progress(done, total)
+        for uid, name in name_writes:
+            self.client.set_cue_property(self.workspace_id, uid, "name", name)
+            done += 1
+            if progress:
+                progress(done, total)
         self.model.mark_committed()
-        return total
+        return len(mic_writes), len(name_writes)

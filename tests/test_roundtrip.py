@@ -40,25 +40,25 @@ def test_load_grid_and_submit(mock_and_client):
     session = WorkspaceSession(client, WORKSPACE_ID, config)
 
     model = session.load_grid()
-    assert len(model.rows) == 4               # 4 cues (standalone notes hidden)
-    # Every row should have all 32 mic cells backed by real cues, even though
-    # the mics live in a nested "Mics" group alongside audio/lights siblings.
-    for row in model.rows:
-        assert len(row.cells) == 32
-        assert row.label.startswith(("1 Cue", "2 Cue", "3 Cue", "4 Cue"))
+    anchors = model.anchors()
+    assert len(anchors) == 4                  # 4 cue groups become looks
+    # Each look has all 32 mic cells, even though mics are nested in a "Mics"
+    # group alongside audio/lights siblings.
+    for a in anchors:
+        assert len(a.cells) == 32
 
     # Flip channel 5 in look 1 and submit.
-    target = model.rows[0].cells[5]
+    target = anchors[0].cells[5]
     new_state = not target.unmuted
     target.unmuted = new_state
-    written = session.submit(only_dirty=True)
-    assert written == 1
+    mics, names = session.submit(only_dirty=True)
+    assert (mics, names) == (1, 0)
 
     # Give the mock a moment to apply the set, then re-read and confirm.
     time.sleep(0.1)
     session2 = WorkspaceSession(client, WORKSPACE_ID, config)
     model2 = session2.load_grid()
-    assert model2.rows[0].cells[5].unmuted == new_state
+    assert model2.anchors()[0].cells[5].unmuted == new_state
 
 
 def test_submit_all(mock_and_client):
@@ -66,8 +66,8 @@ def test_submit_all(mock_and_client):
     config = Config(mic_count=32)
     session = WorkspaceSession(client, WORKSPACE_ID, config)
     session.load_grid()
-    written = session.submit(only_dirty=False)
-    assert written == 4 * 32
+    mics, names = session.submit(only_dirty=False)
+    assert mics == 4 * 32 and names == 0
 
 
 def test_large_show_over_tcp():
@@ -80,8 +80,9 @@ def test_large_show_over_tcp():
     try:
         session = WorkspaceSession(client, WORKSPACE_ID, Config(mic_count=32))
         model = session.load_grid()
-        assert len(model.rows) == 60
-        assert all(len(r.cells) == 32 for r in model.rows)
+        anchors = model.anchors()
+        assert len(anchors) == 60
+        assert all(len(a.cells) == 32 for a in anchors)
     finally:
         client.close()
         mock.close()

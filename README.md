@@ -73,16 +73,19 @@ between sessions — set up your cast once and reuse it. This is a **display aid
 only**; naming a mic never changes anything in QLab. (You can also pre-fill
 names via the `channel_labels` config key.)
 
-### Renaming cues in QLab
+### Renaming cues in QLab (right in the worksheet)
 
-Click **Cue names…** to open an editable list of *every* cue and group in the
-workspace. Type new names, click OK, and the changed names are pushed to QLab.
-This is often faster than clicking through cues one at a time inside QLab —
-double-click a name, type, Enter, repeat. Unlike mic names (which are local to
-this app), **this does change the actual cue names in your QLab workspace.**
+The left column is QLab's full cue hierarchy, expandable like in QLab itself.
+**Double-click any cue or group name and type a new one** — cue names, group
+names, even individual mic cues. Changed names are tinted amber and pushed to
+QLab when you hit **Submit** (alongside any mic changes). Unlike mic names
+(which are local to this app), **this changes the actual cue names in your QLab
+workspace.** It's usually faster than clicking through cues one-at-a-time in
+QLab: double-click, type, Enter, down-arrow, repeat.
 
-Edited-but-not-yet-submitted cells are tinted amber; live (unmuted) mics are
-tinted green. The footer shows the unsaved-change count.
+Use **Expand all** / **Collapse to looks** to switch between the full hierarchy
+and the compact one-row-per-look view. Edited mic cells are tinted amber; live
+(unmuted) mics are tinted green. The footer shows the unsaved-change count.
 
 ---
 
@@ -100,40 +103,38 @@ That's it — QLab Flash discovers the workspace automatically.
 
 ---
 
-## How it maps to your cues (important)
+## How it maps to your cues (works with any grouping)
 
-QLab Flash assumes the common QLab→X32 structure:
+The worksheet mirrors QLab's hierarchy exactly: every cue and group is a row in
+the tree on the left. The only thing QLab Flash has to figure out is **which row
+owns a set of 32 mics** — and it does that dynamically, so you don't have to
+arrange your show any particular way.
 
-- **Each row is a top-level cue** in the cue list — typically a **Group cue**
-  for a given look/moment ("Cue 12 — Top of Act 2").
-- **Each mic is a Network (OSC) cue** somewhere inside that group whose message
-  tells the X32 to turn a channel on or off, e.g. `/ch/03/mix/on 1`. The mic
-  cues can be **nested** — e.g. inside a "Mics" sub-group alongside your audio /
-  lights / video cues. QLab Flash searches the whole subtree, at any depth, so
+- **A mic is a Network (OSC) cue** whose message turns an X32 channel on/off,
+  e.g. `/ch/03/mix/on 1` — wherever it lives in the tree.
+- **A cue becomes a "mic look"** (and gets the 32 checkboxes) when its subtree
+  holds mic cues with no duplicate channel numbers. The *highest* such cue wins.
+  If a container holds two cues that each have a "Ch 1", it can't be one look,
+  so QLab Flash descends until each look has a clean set of channels.
 
-  ```
-  Cue 12  (group)            -> a row
-    ├ Mics (group)
-    │   ├ Ch 1 on            -> mic column 1
-    │   ├ Ch 2 on            -> mic column 2
-    │   └ …
-    ├ Audio                  -> ignored
-    ├ Lights                 -> ignored
-    └ Video                  -> ignored
-  ```
+That single rule handles every layout, at any depth:
 
-  works out of the box.
+```
+Cue 12 → mics                         ✓ Cue 12 is the look
+Cue 12 → Mics group → mics            ✓ Cue 12 is the look
+Cue 12 → Group A → Mics → mics        ✓ Cue 12 is the look  (any depth)
+Act 1 → Cue 1, Cue 2 → … → mics       ✓ Cue 1 and Cue 2 are each a look
+```
 
-QLab Flash scans each cue for those per-channel messages, maps them onto the
-32 mic columns, and on Submit writes the message back with the new on/off value.
-Standalone, non-mic cues sprinkled between your cues (a memo, a lone audio cue)
-have no mics, so they're hidden by default — tick **"Show cues with no mics"**
-in the top bar if you want to see them.
+Look rows show the aggregated 32 checkboxes (this is what you bulk-edit).
+Expand a look and you'll see its real cues underneath, mirroring QLab. Cues that
+aren't mic cues — audio, lights, video, memos, structural groups — are simply
+**blank** under the mic columns.
 
-**It updates existing per-channel cues; it does not create new ones.** If a cue
-has no Network cue for, say, mic 7, that cell is shown dimmed and is skipped on
-submit. (So your show needs one channel-on cue per mic per look — which is the
-normal way this is built.)
+**It updates existing per-channel cues; it does not create new ones.** If a look
+has no cue for, say, mic 7, that column is blank for that look and skipped on
+submit. (So your show needs one channel-on cue per mic per look — the normal way
+this is built.)
 
 If your wiring is different, **everything fragile is configurable** — see below
 — so you can match QLab Flash to your show without touching code.
@@ -152,8 +153,6 @@ QLab Flash also saves your last host/port/passcode there automatically.
 | `qlab_port` | `53000` | QLab's OSC receive port (don't change unless you must). |
 | `transport` | `tcp` | `tcp` or `udp`. TCP is required for reading cue lists on real shows (the replies are too big for UDP); leave it on `tcp`. |
 | `mic_count` | `32` | Number of mic columns. |
-| `show_empty_rows` | `false` | Show top-level cues that contain no mics. |
-| `mics_group_name` | `""` | If set (e.g. `"Mics"`), only scan the subtree of a group with this name — handy if another sub-group contains stray `/ch/...` messages. Empty = scan the whole cue. |
 | `channel_labels` | `{}` | Friendly mic names by channel, e.g. `{"1": "Doug", "2": "Steve"}`. Edit these in-app via **Mic names…**. |
 | `osc_message_property` | `customString` | The QLab cue property holding a network cue's OSC text. If your QLab build reports it under another name, set it here. |
 | `channel_pattern` | see file | Regex with named groups `chan` and `state` used to recognise a mic cue and read its channel + on/off value. |
@@ -192,15 +191,15 @@ confirm the round-trip before doing a whole show.
 
 ```
 qlabflash/
-  osc.py          # dependency-free OSC 1.0 encode/decode
-  qlab.py         # QLab OSC-over-UDP client (discover, connect, read/write cues)
-  model.py        # cue tree  <->  mic grid translation
-  session.py      # connect -> load grid -> submit workflow
+  osc.py          # dependency-free OSC 1.0 codec + SLIP framing for TCP
+  qlab.py         # QLab OSC client over TCP/UDP (discover, connect, read/write)
+  model.py        # cue tree <-> worksheet, dynamic look-anchor detection
+  session.py      # connect -> load worksheet -> submit (mics + names)
   config.py       # all tunable settings
   mock_qlab.py    # simulated QLab for demo mode and tests
-  gui/            # PySide6 interface (spreadsheet, bulk select, connect dialog)
+  gui/            # PySide6 interface: tree worksheet, header, dialogs
 main.py           # entry point
-tests/            # OSC, model, and full UDP round-trip tests
+tests/            # OSC/SLIP, model, anchor detection, and round-trip tests
 ```
 
 ## Running the tests

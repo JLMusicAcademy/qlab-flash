@@ -8,8 +8,6 @@
   "passcode": "",
 
   "mic_count": 32,
-  "show_empty_rows": false,
-  "mics_group_name": "",
   "channel_labels": {"1": "Doug", "2": "Steve", "3": "Mary"},
 
   "osc_message_property": "customString",

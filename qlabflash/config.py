@@ -33,15 +33,6 @@ class Config:
     # --- Mic grid ----------------------------------------------------------
     mic_count: int = 32
 
-    # Hide top-level cues that contain no mics (e.g. standalone audio/lights/
-    # video/memo cues sprinkled between the real cues).
-    show_empty_rows: bool = False
-
-    # Optional: restrict the mic search to the subtree of a group with this
-    # name (e.g. "Mics"). Empty means scan each cue's whole subtree, which is
-    # safe because matching is by OSC message anyway.
-    mics_group_name: str = ""
-
     # Friendly per-mic names shown in the column headers, e.g. {"1": "Doug"}.
     # Keyed by channel number (as a string, since JSON object keys are strings).
     # Purely a display aid — it never changes anything in QLab.

@@ -5,23 +5,23 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from PySide6.QtCore import Qt, QObject, Signal
+from PySide6.QtCore import Qt, QModelIndex, QObject, Signal
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
-    QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
+    QComboBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMainWindow,
+    QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
 from ..config import Config
 from ..qlab import QLabClient
 from ..session import WorkspaceSession
-from .cue_names_dialog import CueNamesDialog
 from .header import MicHeaderView
 from .names_dialog import NamesDialog
-from .table_model import MicTableModel
-from .table_view import MicTableView
+from .tree_model import CueTreeModel
+from .tree_view import CueTreeView
 from .worker import run_async
 
 MIC_COL_WIDTH = 30
+NAME_COL_WIDTH = 300
 DEFAULT_CONFIG_PATH = os.path.expanduser("~/.qlab-flash.json")
 
 
@@ -40,10 +40,10 @@ class MainWindow(QMainWindow):
         self.config_path = config_path
         self.mock = mock  # keep the demo server alive for the window's lifetime
         self.session = WorkspaceSession(client, workspace_id, config)
-        self.table_model: Optional[MicTableModel] = None
+        self.tree_model: Optional[CueTreeModel] = None
 
         self.setWindowTitle(f"QLab Flash — {workspace_name}")
-        self.resize(1100, 700)
+        self.resize(1150, 720)
         self._build_ui()
         self._wire_logging()
         self._load_cue_lists()
@@ -61,10 +61,14 @@ class MainWindow(QMainWindow):
         self.cuelist_combo.currentIndexChanged.connect(self._on_cuelist_changed)
         top.addWidget(self.cuelist_combo, 1)
 
-        self.empty_check = QCheckBox("Show cues with no mics")
-        self.empty_check.setChecked(self.config.show_empty_rows)
-        self.empty_check.toggled.connect(self._on_show_empty_toggled)
-        top.addWidget(self.empty_check)
+        self.expand_btn = QPushButton("Expand all")
+        self.expand_btn.clicked.connect(lambda: self.tree.expandAll())
+        top.addWidget(self.expand_btn)
+        self.collapse_btn = QPushButton("Collapse to looks")
+        self.collapse_btn.setToolTip(
+            "Collapse so each mic 'look' shows as one row with its 32 mics.")
+        self.collapse_btn.clicked.connect(self._collapse_to_looks)
+        top.addWidget(self.collapse_btn)
 
         self.names_btn = QPushButton("Mic names…")
         self.names_btn.setToolTip(
@@ -73,13 +77,6 @@ class MainWindow(QMainWindow):
             "just that one.")
         self.names_btn.clicked.connect(self._edit_names)
         top.addWidget(self.names_btn)
-
-        self.cue_names_btn = QPushButton("Cue names…")
-        self.cue_names_btn.setToolTip(
-            "Rename any cues or groups in the workspace and push the changes "
-            "to QLab.")
-        self.cue_names_btn.clicked.connect(self._edit_cue_names)
-        top.addWidget(self.cue_names_btn)
 
         self.reload_btn = QPushButton("Reload")
         self.reload_btn.clicked.connect(self._reload)
@@ -98,21 +95,22 @@ class MainWindow(QMainWindow):
             bulk.addWidget(btn)
         bulk.addSpacing(20)
         self.select_all_btn = QPushButton("Select all")
-        self.select_all_btn.clicked.connect(self._select_all)
+        self.select_all_btn.clicked.connect(lambda: self.tree.selectAll())
         bulk.addWidget(self.select_all_btn)
         bulk.addStretch(1)
-        hint = QLabel("Drag to select a block · Space toggles · 1 unmutes · 0 mutes")
+        hint = QLabel("Drag to select a block · double-click a name to rename · "
+                      "Space toggles · 1 unmutes · 0 mutes")
         hint.setStyleSheet("color: #777;")
         bulk.addWidget(hint)
         root.addLayout(bulk)
 
-        # The grid, with a header that can show mic names vertically.
-        self.table = MicTableView()
-        self.header = MicHeaderView(self.config.label_for, self.table)
-        self.table.setHorizontalHeader(self.header)
+        # The worksheet tree, with a header that can show mic names vertically.
+        self.tree = CueTreeView()
+        self.header = MicHeaderView(self.config.label_for, self.tree)
+        self.tree.setHeader(self.header)
         self.header.sectionDoubleClicked.connect(self._rename_channel)
-        self.table.selectionChangedCount.connect(self._on_selection_count)
-        root.addWidget(self.table, 1)
+        self.tree.selectionChangedCount.connect(self._on_selection_count)
+        root.addWidget(self.tree, 1)
 
         # Bottom bar: dirty count + submit.
         bottom = QHBoxLayout()
@@ -123,13 +121,14 @@ class MainWindow(QMainWindow):
         self.log_toggle.setCheckable(True)
         self.log_toggle.toggled.connect(self._toggle_log)
         bottom.addWidget(self.log_toggle)
-        self.submit_btn = QPushButton("Submit changed cues to QLab")
+        self.submit_btn = QPushButton("Submit changes to QLab")
         self.submit_btn.setDefault(True)
         self.submit_btn.clicked.connect(lambda: self._submit(only_dirty=True))
         bottom.addWidget(self.submit_btn)
-        self.submit_all_btn = QPushButton("Submit ALL")
+        self.submit_all_btn = QPushButton("Submit ALL mics")
         self.submit_all_btn.setToolTip(
-            "Write every mic in every cue, not just the ones you changed.")
+            "Write every mic in every look, not just the ones you changed "
+            "(plus any name edits).")
         self.submit_all_btn.clicked.connect(lambda: self._submit(only_dirty=False))
         bottom.addWidget(self.submit_all_btn)
         root.addLayout(bottom)
@@ -181,13 +180,7 @@ class MainWindow(QMainWindow):
             self._load_grid(index)
 
     def _reload(self) -> None:
-        idx = max(0, self.cuelist_combo.currentIndex())
-        self._load_grid(idx)
-
-    def _on_show_empty_toggled(self, checked: bool) -> None:
-        self.config.show_empty_rows = checked
-        if self.table_model is not None:
-            self._reload()
+        self._load_grid(max(0, self.cuelist_combo.currentIndex()))
 
     def _load_grid(self, index: int) -> None:
         if self._has_unsaved() and not self._confirm_discard():
@@ -199,39 +192,59 @@ class MainWindow(QMainWindow):
             return self.session.load_grid(index, progress=progress)
 
         def done(model):
-            self.table_model = MicTableModel(model)
-            self.table_model.dataChanged.connect(lambda *_: self._refresh_dirty())
-            self.table.setModel(self.table_model)
-            self._format_table()
+            self.tree_model = CueTreeModel(model, self.config)
+            self.tree_model.dataChanged.connect(lambda *_: self._refresh_dirty())
+            self.tree_model.micChanged.connect(self._on_mic_changed)
+            self.tree.setModel(self.tree_model)
+            self._format_tree()
+            self._collapse_to_looks()
             self._set_busy(False)
             self._refresh_dirty()
             self.statusBar().showMessage(
-                f"Loaded {len(model.rows)} cue(s).")
+                f"Loaded {len(model.anchors())} mic look(s) "
+                f"across {sum(1 for _ in model.iter_rows())} cue(s).")
 
         run_async(work, on_done=done, on_error=self._on_error,
                   on_progress=lambda msg: self.statusBar().showMessage(msg))
 
-    def _format_table(self) -> None:
-        header = self.table.horizontalHeader()
-        header.setSectionResizeMode(0, QHeaderView.Interactive)
-        self.table.setColumnWidth(0, 220)
-        for col in range(1, self.table_model.columnCount()):
-            self.table.setColumnWidth(col, MIC_COL_WIDTH)
-        self.table.verticalHeader().setDefaultSectionSize(24)
+    def _format_tree(self) -> None:
+        self.header.setSectionResizeMode(0, QHeaderView.Interactive)
+        self.tree.setColumnWidth(0, NAME_COL_WIDTH)
+        for col in range(1, self.tree_model.columnCount()):
+            self.tree.setColumnWidth(col, MIC_COL_WIDTH)
         self._apply_header_labels()
 
     def _apply_header_labels(self) -> None:
         """Grow/shrink the header for names and repaint it."""
         self.header.set_tall(self.config.has_labels())
-        if self.table_model is not None:
-            self.table_model.headerDataChanged.emit(
-                Qt.Horizontal, 1, self.table_model.columnCount() - 1)
+        if self.tree_model is not None:
+            self.tree_model.headerDataChanged.emit(
+                Qt.Horizontal, 1, self.tree_model.columnCount() - 1)
 
-    # -- mic names ----------------------------------------------------------
+    # -- expansion ----------------------------------------------------------
+    def _collapse_to_looks(self) -> None:
+        """Expand structure down to look rows, but collapse each look's mics."""
+        if self.tree_model is None:
+            return
+
+        def walk(parent_index: QModelIndex):
+            rows = self.tree_model.rowCount(parent_index)
+            for r in range(rows):
+                idx = self.tree_model.index(r, 0, parent_index)
+                node = idx.internalPointer()
+                if node.is_anchor:
+                    self.tree.setExpanded(idx, False)
+                else:
+                    self.tree.setExpanded(idx, True)
+                    walk(idx)
+
+        walk(QModelIndex())
+
+    # -- mic names (column headers) -----------------------------------------
     def _rename_channel(self, logical_index: int) -> None:
         if logical_index < 1:
             return
-        chan = logical_index  # column 1 -> mic 1
+        chan = logical_index
         current = self.config.label_for(chan)
         name, ok = QInputDialog.getText(
             self, f"Name mic {chan}",
@@ -253,61 +266,28 @@ class MainWindow(QMainWindow):
         try:
             self.config.save(self.config_path)
         except OSError:
-            pass  # naming still works for this session even if we can't persist
-
-    # -- cue renaming -------------------------------------------------------
-    def _edit_cue_names(self) -> None:
-        if not self.session.cue_lists:
-            QMessageBox.information(self, "No cues",
-                                    "No cues are loaded yet.")
-            return
-        dialog = CueNamesDialog(self.session.cue_lists, self)
-        if not dialog.exec():
-            return
-        changes = dialog.changes()
-        if not changes:
-            return
-        if QMessageBox.question(
-                self, "Rename cues in QLab",
-                f"Push {len(changes)} cue name change(s) to QLab now?",
-                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
-            return
-
-        self._set_busy(True)
-        self.statusBar().showMessage("Renaming cues in QLab…")
-
-        def work(progress):
-            count = self.session.rename_cues(changes)
-            # Re-read so the new names show in the grid's row labels.
-            self.session.cue_lists = []
-            self.session.fetch_cue_lists()
-            return count
-
-        def done(count):
-            idx = max(0, self.cuelist_combo.currentIndex())
-            self._load_grid(idx)
-            self.statusBar().showMessage(f"Renamed {count} cue(s) in QLab.")
-
-        run_async(work, on_done=done, on_error=self._on_error)
+            pass
 
     # -- bulk edit ----------------------------------------------------------
     def _bulk(self, unmuted: bool) -> None:
-        if self.table_model is None:
+        if self.tree_model is None:
             return
-        n = self.table.set_selected(unmuted)
+        n = self.tree.set_selected(unmuted)
         self.statusBar().showMessage(
             f"{'Unmuted' if unmuted else 'Muted'} {n} mic(s).")
         self._refresh_dirty()
 
     def _bulk_toggle(self) -> None:
-        if self.table_model is None:
+        if self.tree_model is None:
             return
-        n = self.table.toggle_selected()
+        n = self.tree.toggle_selected()
         self.statusBar().showMessage(f"Toggled {n} mic(s).")
         self._refresh_dirty()
 
-    def _select_all(self) -> None:
-        self.table.selectAll()
+    def _on_mic_changed(self) -> None:
+        # Repaint so aliased cells (a look and the mic cue beneath it) match.
+        self.tree.viewport().update()
+        self._refresh_dirty()
 
     def _on_selection_count(self, count: int) -> None:
         if count:
@@ -315,18 +295,23 @@ class MainWindow(QMainWindow):
 
     # -- submit -------------------------------------------------------------
     def _submit(self, only_dirty: bool) -> None:
-        if self.table_model is None:
+        if self.tree_model is None:
             return
-        writes = (self.session.model.dirty_writes() if only_dirty
-                  else self.session.model.all_writes())
-        if not writes:
+        model = self.session.model
+        mic_writes = model.dirty_writes() if only_dirty else model.all_writes()
+        name_writes = model.name_writes()
+        if not mic_writes and not name_writes:
             QMessageBox.information(self, "Nothing to send",
                                     "There are no changes to submit.")
             return
-        verb = "changed" if only_dirty else "ALL"
+        parts = []
+        if mic_writes:
+            parts.append(f"{len(mic_writes)} mic setting(s)")
+        if name_writes:
+            parts.append(f"{len(name_writes)} cue name(s)")
         if QMessageBox.question(
                 self, "Submit to QLab",
-                f"Send {len(writes)} {verb} mic setting(s) to QLab now?",
+                "Send " + " and ".join(parts) + " to QLab now?",
                 QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
             return
 
@@ -336,34 +321,53 @@ class MainWindow(QMainWindow):
         def work(progress):
             return self.session.submit(only_dirty=only_dirty)
 
-        def done(count):
+        def done(result):
+            mics, names = result
             self._set_busy(False)
             self._refresh_dirty()
-            if self.table_model:
-                self.table_model.layoutChanged.emit()
-            self.statusBar().showMessage(f"Sent {count} cue update(s) to QLab.")
+            if self.tree_model:
+                self.tree.viewport().update()
+            self.statusBar().showMessage(
+                f"Sent {mics} mic update(s) and {names} name change(s) to QLab.")
 
         run_async(work, on_done=done, on_error=self._on_error)
 
     # -- state helpers ------------------------------------------------------
+    def _dirty_total(self) -> int:
+        if not self.tree_model:
+            return 0
+        return self.tree_model.mic_dirty_count() + self.tree_model.name_dirty_count()
+
     def _refresh_dirty(self) -> None:
-        n = self.table_model.dirty_count() if self.table_model else 0
-        self.dirty_label.setText("No changes" if n == 0
-                                 else f"{n} unsaved change(s)")
-        self.submit_btn.setEnabled(n > 0)
+        if not self.tree_model:
+            self.dirty_label.setText("No changes")
+            self.submit_btn.setEnabled(False)
+            return
+        mics = self.tree_model.mic_dirty_count()
+        names = self.tree_model.name_dirty_count()
+        if not mics and not names:
+            self.dirty_label.setText("No changes")
+        else:
+            bits = []
+            if mics:
+                bits.append(f"{mics} mic")
+            if names:
+                bits.append(f"{names} name")
+            self.dirty_label.setText(" + ".join(bits) + " change(s) unsaved")
+        self.submit_btn.setEnabled(mics > 0 or names > 0)
 
     def _has_unsaved(self) -> bool:
-        return bool(self.table_model and self.table_model.dirty_count())
+        return self._dirty_total() > 0
 
     def _confirm_discard(self) -> bool:
         return QMessageBox.question(
             self, "Discard changes?",
-            "You have unsaved mic changes. Reload and lose them?",
+            "You have unsaved changes. Reload and lose them?",
             QMessageBox.Yes | QMessageBox.No) == QMessageBox.Yes
 
     def _set_busy(self, busy: bool) -> None:
         for w in (self.reload_btn, self.submit_btn, self.submit_all_btn,
-                  self.cuelist_combo, self.table):
+                  self.cuelist_combo, self.tree):
             w.setEnabled(not busy)
         if not busy:
             self._refresh_dirty()
