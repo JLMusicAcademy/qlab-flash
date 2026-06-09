@@ -20,6 +20,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     # Import Qt lazily so non-GUI tooling (and tests) don't require PySide6.
+    from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication, QDialog
 
     from .config import Config
@@ -30,6 +31,12 @@ def main(argv=None) -> int:
 
     app = QApplication(sys.argv)
     app.setApplicationName("QLab Flash")
+    app.setApplicationDisplayName("QLab Flash")
+
+    icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)),
+                             "assets", "icon.png")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
 
     dialog = ConnectDialog(config)
     if args.demo:

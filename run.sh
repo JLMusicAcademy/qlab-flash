@@ -20,4 +20,10 @@ if [ ! -d "$VENV_DIR" ]; then
   "$VENV_DIR/bin/pip" install -r requirements.txt
 fi
 
+# `--setup` just prepares the environment (used by the .app installer) and exits.
+if [ "${1:-}" = "--setup" ]; then
+  echo "QLab Flash is ready."
+  exit 0
+fi
+
 exec "$VENV_DIR/bin/python" main.py "$@"

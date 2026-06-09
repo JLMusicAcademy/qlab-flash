@@ -6,3 +6,7 @@ build/
 dist/
 *.egg-info/
 .DS_Store
+
+# Locally-built macOS app bundle (made by scripts/make_app.command)
+/QLab Flash.app/
+*.iconset/

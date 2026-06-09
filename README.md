@@ -89,6 +89,28 @@ and the compact one-row-per-look view. Edited mic cells are tinted amber; live
 
 ---
 
+## Make it a real app (custom icon + Dock)
+
+To get a double-clickable app with its own icon instead of launching from
+Terminal, run this once (on your Mac, inside the repo):
+
+```bash
+./scripts/make_app.command
+```
+
+That builds **QLab Flash.app** (custom icon and all). Then:
+
+- **Double-click** it to launch.
+- **Drag it onto your Dock** to keep it one click away.
+- Or drag it into your **Applications** folder.
+
+It's a thin launcher that runs this repo's code, so keep the repo folder where
+it is. After a `git pull` you can re-run the script to rebuild. (To tweak the
+icon art, edit `scripts/make_icon.py`, run `python scripts/make_icon.py`, then
+rebuild the app.)
+
+---
+
 ## Setting up QLab
 
 QLab Flash talks to QLab over OSC on the standard port **53000**, using a **TCP**
@@ -199,6 +221,8 @@ qlabflash/
   mock_qlab.py    # simulated QLab for demo mode and tests
   gui/            # PySide6 interface: tree worksheet, header, dialogs
 main.py           # entry point
+assets/icon.png   # app icon (source art)
+scripts/          # make_icon.py (icon), make_app.command (build the .app)
 tests/            # OSC/SLIP, model, anchor detection, and round-trip tests
 ```
 
