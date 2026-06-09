@@ -13,6 +13,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QAbstractItemView, QMenu, QTreeView
 
+from .selection_delegate import SelectionOutlineDelegate
+
 
 class CueTreeView(QTreeView):
     selectionChangedCount = Signal(int)
@@ -21,6 +23,7 @@ class CueTreeView(QTreeView):
         super().__init__(parent)
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectItems)
+        self.setItemDelegate(SelectionOutlineDelegate(self))
         self.setUniformRowHeights(True)
         self.setAllColumnsShowFocus(True)
         self.setExpandsOnDoubleClick(False)  # double-click edits the name instead
