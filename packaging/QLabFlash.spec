@@ -5,13 +5,19 @@ Bundles the Python interpreter and PySide6 (Qt) inside the app, so the target
 Mac needs nothing installed. Built in CI on an Apple Silicon macOS runner.
 """
 
+import os
+
 block_cipher = None
 
+# Paths in a .spec are resolved relative to the spec file; this spec lives in
+# packaging/, so reach up to the repo root for the real source files.
+ROOT = os.path.abspath(os.path.join(SPECPATH, os.pardir))
+
 a = Analysis(
-    ['main.py'],
-    pathex=[],
+    [os.path.join(ROOT, 'main.py')],
+    pathex=[ROOT],
     binaries=[],
-    datas=[('assets/icon.png', 'assets')],   # used for the in-app window icon
+    datas=[(os.path.join(ROOT, 'assets', 'icon.png'), 'assets')],   # in-app window icon
     hiddenimports=['PySide6.QtCore', 'PySide6.QtGui', 'PySide6.QtWidgets'],
     hookspath=[],
     runtime_hooks=[],
@@ -51,7 +57,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='QLab Flash.app',
-    icon='assets/icon.icns',
+    icon=os.path.join(ROOT, 'assets', 'icon.icns'),
     bundle_identifier='com.jlmusicacademy.qlabflash',
     info_plist={
         'CFBundleName': 'QLab Flash',
