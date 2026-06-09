@@ -105,9 +105,23 @@ That builds **QLab Flash.app** (custom icon and all). Then:
 - Or drag it into your **Applications** folder.
 
 It's a thin launcher that runs this repo's code, so keep the repo folder where
-it is. After a `git pull` you can re-run the script to rebuild. (To tweak the
-icon art, edit `scripts/make_icon.py`, run `python scripts/make_icon.py`, then
-rebuild the app.)
+it is. After a `git pull` you can re-run the script to rebuild.
+
+### Using your own icon
+
+To use your own logo instead of the built-in one, point this helper at your
+image file, then rebuild:
+
+```bash
+./scripts/set_icon.command /path/to/your-logo.png   # drag the file onto Terminal to fill the path
+./scripts/make_app.command
+```
+
+That replaces `assets/icon.png` (squared to 1024×1024). To keep it permanently
+in the project, commit it: `git add assets/icon.png && git commit -m "Custom icon" && git push`.
+
+(Prefer the generated art? Edit `scripts/make_icon.py`, run
+`python scripts/make_icon.py`, then rebuild.)
 
 ---
 
@@ -222,7 +236,7 @@ qlabflash/
   gui/            # PySide6 interface: tree worksheet, header, dialogs
 main.py           # entry point
 assets/icon.png   # app icon (source art)
-scripts/          # make_icon.py (icon), make_app.command (build the .app)
+scripts/          # make_icon.py, set_icon.command (your art), make_app.command
 tests/            # OSC/SLIP, model, anchor detection, and round-trip tests
 ```
 
