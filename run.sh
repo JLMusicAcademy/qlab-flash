@@ -13,6 +13,25 @@ cd "$(dirname "$0")"
 PYTHON="${PYTHON:-python3}"
 VENV_DIR=".venv"
 
+# On Apple Silicon, build a NATIVE (arm64) environment. Otherwise an Intel
+# Python (e.g. an x86_64 Homebrew in /usr/local) runs under Rosetta and macOS
+# warns that "Intel-based" components will stop working in a future release.
+if [ "$(uname -s)" = "Darwin" ] && [ "$(uname -m)" = "arm64" ]; then
+  is_arm64_py() {
+    command -v "$1" >/dev/null 2>&1 && \
+      "$1" -c 'import platform,sys; sys.exit(0 if platform.machine()=="arm64" else 1)' >/dev/null 2>&1
+  }
+  if ! is_arm64_py "$PYTHON"; then
+    for cand in /opt/homebrew/bin/python3 /usr/bin/python3; do
+      if is_arm64_py "$cand"; then
+        echo "Using native Apple Silicon Python: $cand"
+        PYTHON="$cand"
+        break
+      fi
+    done
+  fi
+fi
+
 if [ ! -d "$VENV_DIR" ]; then
   echo "Setting up QLab Flash (one-time)…"
   "$PYTHON" -m venv "$VENV_DIR"
