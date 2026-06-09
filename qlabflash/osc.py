@@ -150,3 +150,51 @@ def _decode_bundle(data: bytes) -> List[Tuple[str, List[Any]]]:
         else:
             messages.append(decode_message(element))
     return messages
+
+
+# --- SLIP framing (RFC 1055) ----------------------------------------------
+# OSC over a TCP stream needs framing so the receiver knows where each packet
+# ends. QLab uses double-END SLIP (as required by OSC 1.1): each packet is
+# wrapped in END bytes, and any END/ESC bytes inside the packet are escaped.
+SLIP_END = 0xC0
+SLIP_ESC = 0xDB
+SLIP_ESC_END = 0xDC
+SLIP_ESC_ESC = 0xDD
+
+
+def slip_encode(packet: bytes) -> bytes:
+    out = bytearray([SLIP_END])
+    for b in packet:
+        if b == SLIP_END:
+            out += bytes([SLIP_ESC, SLIP_ESC_END])
+        elif b == SLIP_ESC:
+            out += bytes([SLIP_ESC, SLIP_ESC_ESC])
+        else:
+            out.append(b)
+    out.append(SLIP_END)
+    return bytes(out)
+
+
+class SlipDecoder:
+    """Feed raw stream bytes in, get whole de-framed packets out."""
+
+    def __init__(self):
+        self._buf = bytearray()
+        self._in_esc = False
+
+    def feed(self, data: bytes) -> List[bytes]:
+        packets: List[bytes] = []
+        for b in data:
+            if self._in_esc:
+                self._buf.append(SLIP_END if b == SLIP_ESC_END
+                                 else SLIP_ESC if b == SLIP_ESC_ESC else b)
+                self._in_esc = False
+            elif b == SLIP_END:
+                if self._buf:                  # ignore empty frames (double-END)
+                    packets.append(bytes(self._buf))
+                    self._buf = bytearray()
+            elif b == SLIP_ESC:
+                self._in_esc = True
+            else:
+                self._buf.append(b)
+        return packets

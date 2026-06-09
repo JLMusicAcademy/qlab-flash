@@ -1,4 +1,4 @@
-"""A small QLab OSC-over-UDP client.
+"""A small QLab OSC client (TCP or UDP).
 
 Talks to QLab using its OSC dictionary. Most QLab queries generate a reply: a
 single OSC message whose only argument is a JSON string of the form::
@@ -10,7 +10,13 @@ We send a query, then wait for the reply whose JSON ``address`` matches the
 method we asked about. Replies are matched on the *suffix* of the address so we
 don't have to care whether QLab echoes the workspace prefix back.
 
-Threading: a single background thread drains the UDP socket and dispatches each
+Transport: TCP is the default and is *required* for methods that return large
+replies (e.g. ``/cueLists`` on a real show) — those easily exceed the maximum
+size of a single UDP datagram, so QLab itself tells you to use TCP for them.
+Over TCP, packets are framed with double-END SLIP (RFC 1055) and QLab sends
+replies back on the same connection. UDP remains available for simple setups.
+
+Threading: a single background thread drains the socket and dispatches each
 reply to the waiting caller via a per-key queue.
 """
 
@@ -31,20 +37,30 @@ class QLabError(RuntimeError):
 
 
 class QLabClient:
-    def __init__(self, host: str, send_port: int = 53000,
-                 listen_port: int = 53001, reply_timeout: float = 5.0):
+    def __init__(self, host: str, port: int = 53000, transport: str = "tcp",
+                 listen_port: int = 0, reply_timeout: float = 5.0,
+                 connect_timeout: float = 5.0):
         self.host = host
-        self.send_port = send_port
+        self.port = port
+        self.transport = transport.lower()
         self.reply_timeout = reply_timeout
-
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._sock.bind(("", listen_port))
-        self.listen_port = self._sock.getsockname()[1]
 
         self._lock = threading.Lock()
         self._waiters: Dict[str, "queue.Queue[Any]"] = {}
         self._log_cb = None
+
+        if self.transport == "tcp":
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self._sock.settimeout(connect_timeout)
+            self._sock.connect((host, port))
+            self._sock.settimeout(None)
+            self._slip = osc.SlipDecoder()
+        else:
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._sock.bind(("", listen_port))
+            self.listen_port = self._sock.getsockname()[1]
 
         self._running = True
         self._thread = threading.Thread(target=self._recv_loop, daemon=True)
@@ -65,7 +81,10 @@ class QLabClient:
     def send(self, address: str, *args: Any) -> None:
         """Fire-and-forget OSC message."""
         packet = osc.encode_message(address, *args)
-        self._sock.sendto(packet, (self.host, self.send_port))
+        if self.transport == "tcp":
+            self._sock.sendall(osc.slip_encode(packet))
+        else:
+            self._sock.sendto(packet, (self.host, self.port))
         self._log("send", address, list(args))
 
     def query(self, address: str, *args: Any,
@@ -171,6 +190,12 @@ class QLabClient:
 
     # -- internals ----------------------------------------------------------
     def _recv_loop(self) -> None:
+        if self.transport == "tcp":
+            self._recv_loop_tcp()
+        else:
+            self._recv_loop_udp()
+
+    def _recv_loop_udp(self) -> None:
         while self._running:
             try:
                 data, _addr = self._sock.recvfrom(65535)
@@ -178,6 +203,18 @@ class QLabClient:
                 break
             for address, args in osc.decode_packet(data):
                 self._dispatch(address, args)
+
+    def _recv_loop_tcp(self) -> None:
+        while self._running:
+            try:
+                data = self._sock.recv(65535)
+            except OSError:
+                break
+            if not data:
+                break  # QLab closed the connection
+            for packet in self._slip.feed(data):
+                for address, args in osc.decode_packet(packet):
+                    self._dispatch(address, args)
 
     def _dispatch(self, address: str, args: List[Any]) -> None:
         payload = args[0] if args else None

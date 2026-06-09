@@ -81,19 +81,42 @@ def _make_show(num_looks: int = 6, mic_count: int = 32):
         "type": "Cue List",
         "cues": list_cues,
     })
-    return cue_lists, texts
+
+    # Index every cue dict by uid so set-name can mutate the live tree.
+    index = {}
+
+    def _index(node):
+        index[node["uniqueID"]] = node
+        for child in node.get("cues", []):
+            _index(child)
+
+    for cl in cue_lists:
+        _index(cl)
+    return cue_lists, texts, index
 
 
 class MockQLab:
+    """A simulated QLab. Defaults to TCP (like the real app); supports UDP too."""
+
     def __init__(self, host: str = "127.0.0.1", port: int = 53000,
-                 num_looks: int = 6, mic_count: int = 32):
-        self.cue_lists, self.texts = _make_show(num_looks, mic_count)
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._sock.bind((host, port))
-        self.port = self._sock.getsockname()[1]
+                 transport: str = "tcp", num_looks: int = 6, mic_count: int = 32):
+        self.cue_lists, self.texts, self._index = _make_show(num_looks, mic_count)
+        self.transport = transport.lower()
         self._running = True
-        self._thread = threading.Thread(target=self._loop, daemon=True)
+
+        if self.transport == "tcp":
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._sock.bind((host, port))
+            self._sock.listen(5)
+            self.port = self._sock.getsockname()[1]
+            self._thread = threading.Thread(target=self._accept_loop, daemon=True)
+        else:
+            self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            self._sock.bind((host, port))
+            self.port = self._sock.getsockname()[1]
+            self._thread = threading.Thread(target=self._udp_loop, daemon=True)
         self._thread.start()
 
     def close(self) -> None:
@@ -103,16 +126,18 @@ class MockQLab:
         except OSError:
             pass
 
-    def _reply(self, dest, address: str, data, status: str = "ok") -> None:
+    @staticmethod
+    def _packet(address: str, data, status: str = "ok") -> bytes:
         payload = json.dumps({
             "workspace_id": WORKSPACE_ID,
             "address": address,
             "status": status,
             "data": data,
         })
-        self._sock.sendto(osc.encode_message(address, payload), dest)
+        return osc.encode_message(address, payload)
 
-    def _loop(self) -> None:
+    # -- UDP -----------------------------------------------------------------
+    def _udp_loop(self) -> None:
         while self._running:
             try:
                 data, src = self._sock.recvfrom(65535)
@@ -122,34 +147,77 @@ class MockQLab:
                 address, args = osc.decode_message(data)
             except Exception:
                 continue
-            self._handle(src, address, args)
+            self._handle(lambda pkt: self._sock.sendto(pkt, src), address, args)
 
-    def _handle(self, src, address: str, args: List) -> None:
-        if address == "/workspaces":
-            self._reply(src, "/workspaces", [{
-                "uniqueID": WORKSPACE_ID,
-                "displayName": "Mock Show.qlab5",
-                "hasPasscode": False,
-                "version": "5.5.0",
-            }])
-            return
+    # -- TCP -----------------------------------------------------------------
+    def _accept_loop(self) -> None:
+        while self._running:
+            try:
+                conn, _addr = self._sock.accept()
+            except OSError:
+                break
+            threading.Thread(target=self._serve_conn, args=(conn,),
+                             daemon=True).start()
 
-        if address.endswith("/connect"):
-            self._reply(src, address, "ok")
-            return
+    def _serve_conn(self, conn) -> None:
+        decoder = osc.SlipDecoder()
+        send = lambda pkt: conn.sendall(osc.slip_encode(pkt))
+        try:
+            while self._running:
+                data = conn.recv(65535)
+                if not data:
+                    break
+                for packet in decoder.feed(data):
+                    try:
+                        address, args = osc.decode_message(packet)
+                    except Exception:
+                        continue
+                    self._handle(send, address, args)
+        except OSError:
+            pass
+        finally:
+            try:
+                conn.close()
+            except OSError:
+                pass
 
-        if address.endswith("/cueLists"):
-            self._reply(src, address, self.cue_lists)
-            return
+    # -- request handling (transport-agnostic) ------------------------------
+    def _handle(self, send, address: str, args: List) -> None:
+        try:
+            if address == "/workspaces":
+                send(self._packet("/workspaces", [{
+                    "uniqueID": WORKSPACE_ID,
+                    "displayName": "Mock Show.qlab5",
+                    "hasPasscode": False,
+                    "version": "5.5.0",
+                }]))
+                return
 
-        # /workspace/{id}/cue_id/{uid}/{prop}
-        parts = address.split("/cue_id/")
-        if len(parts) == 2:
-            uid, _, prop = parts[1].partition("/")
-            if args:  # set
-                self.texts[uid] = str(args[0])
-                # QLab acknowledges sets too; harmless if the client ignores it.
-                self._reply(src, address, self.texts[uid])
-            else:      # get
-                self._reply(src, address, self.texts.get(uid, ""))
-            return
+            if address.endswith("/connect"):
+                send(self._packet(address, "ok"))
+                return
+
+            if address.endswith("/cueLists"):
+                send(self._packet(address, self.cue_lists))
+                return
+
+            # /workspace/{id}/cue_id/{uid}/{prop}
+            parts = address.split("/cue_id/")
+            if len(parts) == 2:
+                uid, _, prop = parts[1].partition("/")
+                if args:  # set
+                    value = str(args[0])
+                    if prop == "name" and uid in self._index:
+                        self._index[uid]["name"] = value
+                    else:
+                        self.texts[uid] = value
+                    send(self._packet(address, value))
+                else:      # get
+                    if prop == "name":
+                        node = self._index.get(uid, {})
+                        send(self._packet(address, node.get("name", "")))
+                    else:
+                        send(self._packet(address, self.texts.get(uid, "")))
+                return
+        except OSError:
+            pass  # client went away mid-reply; ignore

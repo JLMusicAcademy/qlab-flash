@@ -10,11 +10,13 @@ from qlabflash.qlab import QLabClient
 from qlabflash.session import WorkspaceSession
 
 
-@pytest.fixture
-def mock_and_client():
-    # Port 0 lets the OS pick a free port for the mock; client points at it.
-    mock = MockQLab(host="127.0.0.1", port=0, num_looks=4, mic_count=32)
-    client = QLabClient(host="127.0.0.1", send_port=mock.port, listen_port=0,
+@pytest.fixture(params=["tcp", "udp"])
+def mock_and_client(request):
+    # Exercise both transports. Port 0 lets the OS pick a free port.
+    transport = request.param
+    mock = MockQLab(host="127.0.0.1", port=0, transport=transport,
+                    num_looks=4, mic_count=32)
+    client = QLabClient(host="127.0.0.1", port=mock.port, transport=transport,
                         reply_timeout=3.0)
     try:
         yield mock, client
@@ -66,3 +68,41 @@ def test_submit_all(mock_and_client):
     session.load_grid()
     written = session.submit(only_dirty=False)
     assert written == 4 * 32
+
+
+def test_large_show_over_tcp():
+    # A realistically large show: the /cueLists reply is far bigger than a UDP
+    # datagram could hold. TCP + SLIP must stream it whole.
+    mock = MockQLab(host="127.0.0.1", port=0, transport="tcp",
+                    num_looks=60, mic_count=32)
+    client = QLabClient(host="127.0.0.1", port=mock.port, transport="tcp",
+                        reply_timeout=5.0)
+    try:
+        session = WorkspaceSession(client, WORKSPACE_ID, Config(mic_count=32))
+        model = session.load_grid()
+        assert len(model.rows) == 60
+        assert all(len(r.cells) == 32 for r in model.rows)
+    finally:
+        client.close()
+        mock.close()
+
+
+def test_rename_cues_over_tcp():
+    mock = MockQLab(host="127.0.0.1", port=0, transport="tcp",
+                    num_looks=3, mic_count=8)
+    client = QLabClient(host="127.0.0.1", port=mock.port, transport="tcp",
+                        reply_timeout=5.0)
+    try:
+        session = WorkspaceSession(client, WORKSPACE_ID, Config(mic_count=8))
+        session.fetch_cue_lists()
+        # Rename the first cue group and one mic cue.
+        n = session.rename_cues([("group-1", "Top of Act 1"),
+                                 ("net-1-1", "Doug")])
+        assert n == 2
+        time.sleep(0.1)
+        cue_lists = session.fetch_cue_lists()  # re-read
+        main = cue_lists[0]
+        assert main.children[0].name == "Top of Act 1"
+    finally:
+        client.close()
+        mock.close()

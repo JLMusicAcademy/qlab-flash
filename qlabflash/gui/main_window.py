@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from ..config import Config
 from ..qlab import QLabClient
 from ..session import WorkspaceSession
+from .cue_names_dialog import CueNamesDialog
 from .header import MicHeaderView
 from .names_dialog import NamesDialog
 from .table_model import MicTableModel
@@ -72,6 +73,13 @@ class MainWindow(QMainWindow):
             "just that one.")
         self.names_btn.clicked.connect(self._edit_names)
         top.addWidget(self.names_btn)
+
+        self.cue_names_btn = QPushButton("Cue names…")
+        self.cue_names_btn.setToolTip(
+            "Rename any cues or groups in the workspace and push the changes "
+            "to QLab.")
+        self.cue_names_btn.clicked.connect(self._edit_cue_names)
+        top.addWidget(self.cue_names_btn)
 
         self.reload_btn = QPushButton("Reload")
         self.reload_btn.clicked.connect(self._reload)
@@ -246,6 +254,41 @@ class MainWindow(QMainWindow):
             self.config.save(self.config_path)
         except OSError:
             pass  # naming still works for this session even if we can't persist
+
+    # -- cue renaming -------------------------------------------------------
+    def _edit_cue_names(self) -> None:
+        if not self.session.cue_lists:
+            QMessageBox.information(self, "No cues",
+                                    "No cues are loaded yet.")
+            return
+        dialog = CueNamesDialog(self.session.cue_lists, self)
+        if not dialog.exec():
+            return
+        changes = dialog.changes()
+        if not changes:
+            return
+        if QMessageBox.question(
+                self, "Rename cues in QLab",
+                f"Push {len(changes)} cue name change(s) to QLab now?",
+                QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+
+        self._set_busy(True)
+        self.statusBar().showMessage("Renaming cues in QLab…")
+
+        def work(progress):
+            count = self.session.rename_cues(changes)
+            # Re-read so the new names show in the grid's row labels.
+            self.session.cue_lists = []
+            self.session.fetch_cue_lists()
+            return count
+
+        def done(count):
+            idx = max(0, self.cuelist_combo.currentIndex())
+            self._load_grid(idx)
+            self.statusBar().showMessage(f"Renamed {count} cue(s) in QLab.")
+
+        run_async(work, on_done=done, on_error=self._on_error)
 
     # -- bulk edit ----------------------------------------------------------
     def _bulk(self, unmuted: bool) -> None:

@@ -96,12 +96,14 @@ class ConnectDialog(QDialog):
         if self.demo_check.isChecked():
             from ..mock_qlab import MockQLab
             self.mock = MockQLab(host="127.0.0.1", port=0,
+                                 transport=self.config.transport,
                                  mic_count=self.config.mic_count)
             host, port = "127.0.0.1", self.mock.port
         else:
             host, port = self.host_edit.text().strip(), self.port_spin.value()
 
-        self.client = QLabClient(host=host, send_port=port, listen_port=0,
+        self.client = QLabClient(host=host, port=port,
+                                 transport=self.config.transport,
                                  reply_timeout=self.config.reply_timeout)
         return self.client
 
@@ -110,9 +112,11 @@ class ConnectDialog(QDialog):
         self._set_status("Searching for workspaces…")
         self.list_widget.clear()
         self.discover_btn.setEnabled(False)
-        client = self._ensure_client()
 
         def work(progress):
+            # Creating the client opens the TCP connection, which can block or
+            # fail, so do it here on the worker thread.
+            client = self._ensure_client()
             return client.workspaces()
 
         def done(workspaces: List[dict]):

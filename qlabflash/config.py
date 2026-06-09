@@ -24,7 +24,10 @@ class Config:
     # --- Network -----------------------------------------------------------
     qlab_host: str = "127.0.0.1"
     qlab_port: int = 53000          # QLab's fixed OSC receive port.
-    listen_port: int = 53001        # Local port we bind for sending/receiving.
+    # TCP is required for reading cue lists on real shows: those replies are
+    # bigger than a single UDP datagram can hold. UDP is left as an option.
+    transport: str = "tcp"
+    listen_port: int = 0            # UDP-only: local port to bind (0 = any).
     passcode: str = ""              # QLab 5 workspace passcode, if any.
 
     # --- Mic grid ----------------------------------------------------------

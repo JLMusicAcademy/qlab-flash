@@ -73,6 +73,14 @@ between sessions — set up your cast once and reuse it. This is a **display aid
 only**; naming a mic never changes anything in QLab. (You can also pre-fill
 names via the `channel_labels` config key.)
 
+### Renaming cues in QLab
+
+Click **Cue names…** to open an editable list of *every* cue and group in the
+workspace. Type new names, click OK, and the changed names are pushed to QLab.
+This is often faster than clicking through cues one at a time inside QLab —
+double-click a name, type, Enter, repeat. Unlike mic names (which are local to
+this app), **this does change the actual cue names in your QLab workspace.**
+
 Edited-but-not-yet-submitted cells are tinted amber; live (unmuted) mics are
 tinted green. The footer shows the unsaved-change count.
 
@@ -80,7 +88,9 @@ tinted green. The footer shows the unsaved-change count.
 
 ## Setting up QLab
 
-QLab Flash talks to QLab over OSC on the standard port **53000**. In QLab:
+QLab Flash talks to QLab over OSC on the standard port **53000**, using a **TCP**
+connection (required for reading whole cue lists — those replies are far bigger
+than a single UDP packet can carry). In QLab:
 
 1. Open **Workspace Settings → Network**.
 2. Under **OSC Access**, allow access (and note the passcode if you set one).
@@ -140,6 +150,7 @@ QLab Flash also saves your last host/port/passcode there automatically.
 |-----|---------|---------|
 | `qlab_host` | `127.0.0.1` | QLab's IP (use the Mac's own IP if QLab is elsewhere). |
 | `qlab_port` | `53000` | QLab's OSC receive port (don't change unless you must). |
+| `transport` | `tcp` | `tcp` or `udp`. TCP is required for reading cue lists on real shows (the replies are too big for UDP); leave it on `tcp`. |
 | `mic_count` | `32` | Number of mic columns. |
 | `show_empty_rows` | `false` | Show top-level cues that contain no mics. |
 | `mics_group_name` | `""` | If set (e.g. `"Mics"`), only scan the subtree of a group with this name — handy if another sub-group contains stray `/ch/...` messages. Empty = scan the whole cue. |

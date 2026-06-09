@@ -52,6 +52,32 @@ class WorkspaceSession:
             mics_group_name=self.config.mics_group_name)
         return self.model
 
+    # -- renaming cues ------------------------------------------------------
+    def all_cues_flat(self) -> List[tuple]:
+        """Every cue in the workspace as ``(depth, Cue)``, in document order."""
+        out: List[tuple] = []
+
+        def walk(cue: Cue, depth: int):
+            out.append((depth, cue))
+            for child in cue.children:
+                walk(child, depth + 1)
+
+        if not self.cue_lists:
+            self.fetch_cue_lists()
+        for cue_list in self.cue_lists:
+            walk(cue_list, 0)
+        return out
+
+    def rename_cues(self, changes: List[tuple],
+                    progress: Optional[Callable[[int, int], None]] = None) -> int:
+        """Apply ``(cue_uid, new_name)`` renames to QLab. Returns the count."""
+        total = len(changes)
+        for i, (uid, name) in enumerate(changes, start=1):
+            self.client.set_cue_property(self.workspace_id, uid, "name", name)
+            if progress:
+                progress(i, total)
+        return total
+
     # -- submitting ---------------------------------------------------------
     def submit(self, only_dirty: bool = True,
                progress: Optional[Callable[[int, int], None]] = None) -> int:

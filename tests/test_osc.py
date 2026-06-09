@@ -50,3 +50,25 @@ def test_bool_encoded_as_int():
     data = osc.encode_message("/b", True, False)
     _, args = osc.decode_message(data)
     assert args == [1, 0]
+
+
+def test_slip_roundtrip_with_escapes():
+    # Payload deliberately contains END (0xC0) and ESC (0xDB) bytes.
+    payload = bytes([0x01, osc.SLIP_END, 0x02, osc.SLIP_ESC, 0x03])
+    framed = osc.slip_encode(payload)
+    assert framed[0] == osc.SLIP_END and framed[-1] == osc.SLIP_END
+    decoder = osc.SlipDecoder()
+    assert decoder.feed(framed) == [payload]
+
+
+def test_slip_decoder_handles_split_and_multiple_frames():
+    p1 = osc.encode_message("/one", 1)
+    p2 = osc.encode_message("/two", "hello")
+    stream = osc.slip_encode(p1) + osc.slip_encode(p2)
+    decoder = osc.SlipDecoder()
+    out = []
+    # Feed the stream one byte at a time to exercise buffering.
+    for b in stream:
+        out.extend(decoder.feed(bytes([b])))
+    assert [osc.decode_message(p) for p in out] == [
+        ("/one", [1]), ("/two", ["hello"])]
