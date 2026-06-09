@@ -1,0 +1,81 @@
+name: Build macOS app
+
+# Builds a self-contained "QLab Flash.app", wraps it in a drag-to-Applications
+# .dmg, and publishes it to the repo's Releases page for easy download.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'qlabflash/**'
+      - 'main.py'
+      - 'assets/icon.png'
+      - 'packaging/**'
+      - '.github/workflows/build-macos.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14          # Apple Silicon (arm64)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Build .icns icon
+        run: |
+          mkdir -p build/AppIcon.iconset
+          for s in 16 32 128 256 512; do
+            sips -z $s $s assets/icon.png --out build/AppIcon.iconset/icon_${s}x${s}.png
+            sips -z $((s*2)) $((s*2)) assets/icon.png --out build/AppIcon.iconset/icon_${s}x${s}@2x.png
+          done
+          iconutil -c icns build/AppIcon.iconset -o assets/icon.icns
+
+      - name: Build app bundle
+        run: pyinstaller --noconfirm --clean packaging/QLabFlash.spec
+
+      - name: Ad-hoc code sign
+        run: codesign --force --deep --sign - "dist/QLab Flash.app"
+
+      - name: Build drag-to-Applications .dmg
+        run: |
+          brew install create-dmg
+          create-dmg \
+            --volname "QLab Flash" \
+            --volicon assets/icon.icns \
+            --window-pos 200 120 \
+            --window-size 620 400 \
+            --icon-size 120 \
+            --icon "QLab Flash.app" 160 200 \
+            --hide-extension "QLab Flash.app" \
+            --app-drop-link 460 200 \
+            --no-internet-enable \
+            "QLab-Flash.dmg" \
+            "dist/QLab Flash.app" \
+          || hdiutil create -volname "QLab Flash" -srcfolder "dist/QLab Flash.app" -ov -format UDZO "QLab-Flash.dmg"
+
+      - name: Publish to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: macos-app
+          name: QLab Flash for macOS (Apple Silicon)
+          body: |
+            ## Install
+            1. Download **QLab-Flash.dmg** below.
+            2. Double-click it; a window opens.
+            3. Drag **QLab Flash** onto the **Applications** folder.
+            4. First launch only: right-click the app → **Open** (it's not
+               Apple-signed), then click Open.
+
+            Self-contained — no Python, Homebrew, or other setup required.
+            For Apple Silicon Macs (M1/M2/M3/M4).
+          files: QLab-Flash.dmg
