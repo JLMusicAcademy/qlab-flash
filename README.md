@@ -60,6 +60,19 @@ The first launch creates a virtual environment and installs the GUI toolkit
 - **Select all** selects the entire grid (e.g. mute everything, then open just
   the mics you need).
 
+### Naming mics (Doug, Steve, Mary…)
+
+Numbers are hard to read at a glance, so you can give each mic a name:
+
+- Click **Mic names…** to edit all 32 at once, or
+- **double-click a mic's column header** to rename just that one.
+
+Named mics show the name vertically under the number in the header (like a
+console channel strip). Names are saved to your config file, so they persist
+between sessions — set up your cast once and reuse it. This is a **display aid
+only**; naming a mic never changes anything in QLab. (You can also pre-fill
+names via the `channel_labels` config key.)
+
 Edited-but-not-yet-submitted cells are tinted amber; live (unmuted) mics are
 tinted green. The footer shows the unsaved-change count.
 
@@ -130,6 +143,7 @@ QLab Flash also saves your last host/port/passcode there automatically.
 | `mic_count` | `32` | Number of mic columns. |
 | `show_empty_rows` | `false` | Show top-level cues that contain no mics. |
 | `mics_group_name` | `""` | If set (e.g. `"Mics"`), only scan the subtree of a group with this name — handy if another sub-group contains stray `/ch/...` messages. Empty = scan the whole cue. |
+| `channel_labels` | `{}` | Friendly mic names by channel, e.g. `{"1": "Doug", "2": "Steve"}`. Edit these in-app via **Mic names…**. |
 | `osc_message_property` | `customString` | The QLab cue property holding a network cue's OSC text. If your QLab build reports it under another name, set it here. |
 | `channel_pattern` | see file | Regex with named groups `chan` and `state` used to recognise a mic cue and read its channel + on/off value. |
 | `write_template` | `/ch/{chan:02d}/mix/on {state}` | How a mic cue's message is written back. |

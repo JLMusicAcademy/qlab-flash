@@ -2,23 +2,26 @@
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from PySide6.QtCore import Qt, QObject, Signal
-from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QLabel, QMainWindow,
-    QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
+    QCheckBox, QComboBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel,
+    QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
 )
 
 from ..config import Config
 from ..qlab import QLabClient
 from ..session import WorkspaceSession
+from .header import MicHeaderView
+from .names_dialog import NamesDialog
 from .table_model import MicTableModel
 from .table_view import MicTableView
 from .worker import run_async
 
 MIC_COL_WIDTH = 30
+DEFAULT_CONFIG_PATH = os.path.expanduser("~/.qlab-flash.json")
 
 
 class _LogBridge(QObject):
@@ -28,10 +31,12 @@ class _LogBridge(QObject):
 
 class MainWindow(QMainWindow):
     def __init__(self, client: QLabClient, workspace_id: str,
-                 workspace_name: str, config: Config, mock=None):
+                 workspace_name: str, config: Config, mock=None,
+                 config_path: str = DEFAULT_CONFIG_PATH):
         super().__init__()
         self.client = client
         self.config = config
+        self.config_path = config_path
         self.mock = mock  # keep the demo server alive for the window's lifetime
         self.session = WorkspaceSession(client, workspace_id, config)
         self.table_model: Optional[MicTableModel] = None
@@ -60,6 +65,14 @@ class MainWindow(QMainWindow):
         self.empty_check.toggled.connect(self._on_show_empty_toggled)
         top.addWidget(self.empty_check)
 
+        self.names_btn = QPushButton("Mic names…")
+        self.names_btn.setToolTip(
+            "Give mics friendly names (e.g. actor names) shown in the column "
+            "headers. Tip: you can also double-click a mic's header to rename "
+            "just that one.")
+        self.names_btn.clicked.connect(self._edit_names)
+        top.addWidget(self.names_btn)
+
         self.reload_btn = QPushButton("Reload")
         self.reload_btn.clicked.connect(self._reload)
         top.addWidget(self.reload_btn)
@@ -85,8 +98,11 @@ class MainWindow(QMainWindow):
         bulk.addWidget(hint)
         root.addLayout(bulk)
 
-        # The grid.
+        # The grid, with a header that can show mic names vertically.
         self.table = MicTableView()
+        self.header = MicHeaderView(self.config.label_for, self.table)
+        self.table.setHorizontalHeader(self.header)
+        self.header.sectionDoubleClicked.connect(self._rename_channel)
         self.table.selectionChangedCount.connect(self._on_selection_count)
         root.addWidget(self.table, 1)
 
@@ -194,6 +210,42 @@ class MainWindow(QMainWindow):
         for col in range(1, self.table_model.columnCount()):
             self.table.setColumnWidth(col, MIC_COL_WIDTH)
         self.table.verticalHeader().setDefaultSectionSize(24)
+        self._apply_header_labels()
+
+    def _apply_header_labels(self) -> None:
+        """Grow/shrink the header for names and repaint it."""
+        self.header.set_tall(self.config.has_labels())
+        if self.table_model is not None:
+            self.table_model.headerDataChanged.emit(
+                Qt.Horizontal, 1, self.table_model.columnCount() - 1)
+
+    # -- mic names ----------------------------------------------------------
+    def _rename_channel(self, logical_index: int) -> None:
+        if logical_index < 1:
+            return
+        chan = logical_index  # column 1 -> mic 1
+        current = self.config.label_for(chan)
+        name, ok = QInputDialog.getText(
+            self, f"Name mic {chan}",
+            f"Name for mic {chan} (blank to clear):", text=current)
+        if not ok:
+            return
+        self.config.set_label(chan, name)
+        self._save_config()
+        self._apply_header_labels()
+
+    def _edit_names(self) -> None:
+        dialog = NamesDialog(self.config, self)
+        if dialog.exec():
+            dialog.apply_to_config()
+            self._save_config()
+            self._apply_header_labels()
+
+    def _save_config(self) -> None:
+        try:
+            self.config.save(self.config_path)
+        except OSError:
+            pass  # naming still works for this session even if we can't persist
 
     # -- bulk edit ----------------------------------------------------------
     def _bulk(self, unmuted: bool) -> None:

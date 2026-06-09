@@ -105,10 +105,18 @@ class MicTableModel(QAbstractTableModel):
         return base | Qt.ItemIsUserCheckable
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if orientation == Qt.Horizontal and section >= 1:
+            chan = self.channel_for_column(section)
+            if role == Qt.DisplayRole:
+                return self.grid.config.header_text(chan)
+            if role == Qt.ToolTipRole:
+                name = self.grid.config.label_for(chan)
+                return f"Mic {chan} — {name}" if name else f"Mic {chan}"
+            return None
         if role != Qt.DisplayRole:
             return None
         if orientation == Qt.Horizontal:
-            return "Cue" if section == 0 else str(self.channel_for_column(section))
+            return "Cue"
         return str(section + 1)
 
     # -- bulk operations on a set of indexes --------------------------------

@@ -1,5 +1,27 @@
+import json
+
 from qlabflash.config import Config
 from qlabflash.model import Cue, GridModel
+
+
+def test_channel_labels_set_clear_and_persist(tmp_path):
+    cfg = Config(mic_count=32)
+    assert cfg.header_text(1) == "1"
+    cfg.set_label(1, "Doug")
+    cfg.set_label(2, "  Steve  ")
+    assert cfg.label_for(1) == "Doug"
+    assert cfg.label_for(2) == "Steve"      # trimmed
+    assert cfg.header_text(1) == "Doug"
+    assert cfg.has_labels()
+
+    path = tmp_path / "cfg.json"
+    cfg.save(str(path))
+    reloaded = Config.load(str(path))
+    assert reloaded.label_for(1) == "Doug"
+
+    cfg.set_label(1, "")                      # blank clears
+    assert cfg.label_for(1) == ""
+    assert "1" not in cfg.channel_labels
 
 
 def make_model():

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import asdict, dataclass, field
+from typing import Dict
 
 # X32 channel-on OSC command. On the X32, ``/ch/NN/mix/on`` with argument 1
 # means the channel is ON (audible / unmuted) and 0 means OFF (muted). This
@@ -38,6 +39,11 @@ class Config:
     # safe because matching is by OSC message anyway.
     mics_group_name: str = ""
 
+    # Friendly per-mic names shown in the column headers, e.g. {"1": "Doug"}.
+    # Keyed by channel number (as a string, since JSON object keys are strings).
+    # Purely a display aid — it never changes anything in QLab.
+    channel_labels: Dict[str, str] = field(default_factory=dict)
+
     # --- How mic state is stored in QLab cues ------------------------------
     # The QLab cue property that holds a network cue's outgoing OSC text. This
     # has historically been "customString". If your QLab build reports the
@@ -64,6 +70,24 @@ class Config:
 
     def is_unmuted_value(self, value: int) -> bool:
         return value == self.unmuted_value
+
+    # --- Mic names ---------------------------------------------------------
+    def label_for(self, channel: int) -> str:
+        return self.channel_labels.get(str(channel), "")
+
+    def set_label(self, channel: int, name: str) -> None:
+        name = (name or "").strip()
+        if name:
+            self.channel_labels[str(channel)] = name
+        else:
+            self.channel_labels.pop(str(channel), None)
+
+    def has_labels(self) -> bool:
+        return any(v.strip() for v in self.channel_labels.values())
+
+    def header_text(self, channel: int) -> str:
+        """Column header text: the name if set, otherwise the number."""
+        return self.label_for(channel) or str(channel)
 
     # --- Persistence -------------------------------------------------------
     @classmethod

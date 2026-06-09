@@ -44,7 +44,8 @@ def main(argv=None) -> int:
         pass  # not fatal if we can't persist preferences
 
     window = MainWindow(dialog.client, dialog.workspace_id,
-                        dialog.workspace_name, config, mock=dialog.mock)
+                        dialog.workspace_name, config, mock=dialog.mock,
+                        config_path=args.config)
     window.show()
     return app.exec()
 
