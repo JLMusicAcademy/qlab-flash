@@ -207,10 +207,15 @@ class MainWindow(QMainWindow):
             return self.session.load_grid(index, progress=progress)
 
         def done(model):
+            # Detach the previous model first so nothing references stale rows.
+            old = self.tree_model
+            self.tree.setModel(None)
             self.tree_model = CueTreeModel(model, self.config)
             self.tree_model.dataChanged.connect(lambda *_: self._refresh_dirty())
             self.tree_model.micChanged.connect(self._on_mic_changed)
             self.tree.setModel(self.tree_model)
+            if old is not None:
+                old.deleteLater()
             self._format_tree()
             self._collapse_to_looks()
             self._set_busy(False)

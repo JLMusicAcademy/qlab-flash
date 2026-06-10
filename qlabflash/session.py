@@ -28,7 +28,11 @@ class WorkspaceSession:
 
     def load_grid(self, cue_list_index: int = 0,
                   progress: Optional[Callable[[str], None]] = None) -> GridModel:
-        """Read the mic state for a cue list and build the worksheet tree."""
+        """Read the mic state for a cue list and build the worksheet tree.
+
+        Builds a *fresh* GridModel rather than mutating the one currently shown,
+        so reloading can't corrupt the live view from the worker thread.
+        """
         if not self.cue_lists:
             self.fetch_cue_lists()
         if not self.cue_lists:
@@ -36,17 +40,17 @@ class WorkspaceSession:
         cue_list = self.cue_lists[min(cue_list_index, len(self.cue_lists) - 1)]
         top_level = cue_list.children
 
-        # Fetch the OSC text of every leaf cue (the mic-cue candidates), then
-        # build the hierarchical worksheet.
-        leaf_uids = self.model.candidate_uids(top_level)
+        model = GridModel(self.config)
+        leaf_uids = model.candidate_uids(top_level)
         if progress:
             progress(f"Reading {len(leaf_uids)} cues...")
 
         prop = self.config.osc_message_property
         texts = self.client.get_cue_properties(self.workspace_id, leaf_uids, prop)
 
-        self.model.build_tree(top_level, lambda uid: texts.get(uid))
-        return self.model
+        model.build_tree(top_level, lambda uid: texts.get(uid))
+        self.model = model
+        return model
 
     # -- renaming cues ------------------------------------------------------
     def rename_cues(self, changes: List[tuple],
