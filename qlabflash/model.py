@@ -312,6 +312,25 @@ class GridModel:
     def name_dirty_count(self) -> int:
         return sum(1 for n in self.iter_rows() if n.name_dirty and n.uid)
 
+    def nodes_for_channel(self, channel: int) -> List[RowNode]:
+        """Every mic cue (across all looks) for a given channel."""
+        return [n for n in self.iter_rows()
+                if n.own_cell is not None and n.own_cell.channel == channel]
+
+    def set_channel_name(self, channel: int, name: str) -> List[tuple]:
+        """Rename every cue for ``channel`` to ``name``.
+
+        Returns ``[(node, old_name), …]`` for the nodes that changed (used for
+        undo). The renamed cues become name-dirty and are pushed on submit.
+        """
+        name = (name or "").strip()
+        changed = []
+        for node in self.nodes_for_channel(channel):
+            if node.name != name:
+                changed.append((node, node.name))
+                node.name = name
+        return changed
+
     def mark_committed(self) -> None:
         """After a successful submit, current state becomes the baseline."""
         for cell in self._own_cells():

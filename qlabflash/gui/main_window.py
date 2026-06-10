@@ -6,6 +6,7 @@ import os
 from typing import Optional
 
 from PySide6.QtCore import Qt, QModelIndex, QObject, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMainWindow,
     QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
@@ -104,12 +105,18 @@ class MainWindow(QMainWindow):
         self.select_all_btn = QPushButton("Select all")
         self.select_all_btn.clicked.connect(lambda: self.tree.selectAll())
         bulk.addWidget(self.select_all_btn)
+        self.undo_btn = QPushButton("Undo")
+        self.undo_btn.setToolTip("Undo the last change (⌘Z). Up to 30 steps.")
+        self.undo_btn.clicked.connect(self._undo)
+        bulk.addWidget(self.undo_btn)
         bulk.addStretch(1)
         hint = QLabel("Drag to select a block · double-click a name to rename · "
-                      "Space toggles · 1 unmutes · 0 mutes")
+                      "Space toggles · 1 unmutes · 0 mutes · ⌘Z undo")
         hint.setStyleSheet("color: #777;")
         bulk.addWidget(hint)
         root.addLayout(bulk)
+
+        QShortcut(QKeySequence.Undo, self, self._undo)
 
         # The worksheet tree, with a header that can show mic names vertically.
         self.tree = CueTreeView()
@@ -260,7 +267,14 @@ class MainWindow(QMainWindow):
 
         walk(QModelIndex())
 
-    # -- mic names (column headers) -----------------------------------------
+    # -- mic names (column headers + QLab cue names) ------------------------
+    def _apply_channel_name(self, chan: int, name: str) -> None:
+        """Set the column label and (via the model) the channel's cue names."""
+        if self.tree_model is not None:
+            self.tree_model.rename_channel(chan, name)
+        else:
+            self.config.set_label(chan, name)
+
     def _rename_channel(self, logical_index: int) -> None:
         if logical_index < 1:
             return
@@ -268,19 +282,38 @@ class MainWindow(QMainWindow):
         current = self.config.label_for(chan)
         name, ok = QInputDialog.getText(
             self, f"Name mic {chan}",
-            f"Name for mic {chan} (blank to clear):", text=current)
-        if not ok:
+            f"Name for mic {chan} (e.g. an actor/role). This also renames "
+            f"mic {chan}'s cue in every look (applied on Submit):",
+            text=current)
+        if not ok or name.strip() == current:
             return
-        self.config.set_label(chan, name)
+        self._apply_channel_name(chan, name)
         self._save_config()
-        self._apply_header_labels()
+        self._after_name_change()
 
     def _edit_names(self) -> None:
         dialog = NamesDialog(self.config, self)
-        if dialog.exec():
-            dialog.apply_to_config()
-            self._save_config()
-            self._apply_header_labels()
+        if not dialog.exec():
+            return
+        for chan, name in dialog.values().items():
+            if name.strip() != self.config.label_for(chan):
+                self._apply_channel_name(chan, name)
+        self._save_config()
+        self._after_name_change()
+
+    def _after_name_change(self) -> None:
+        self._apply_header_labels()
+        if self.tree_model is not None:
+            self.tree.viewport().update()
+        self._refresh_dirty()
+
+    def _undo(self) -> None:
+        if self.tree_model is None or not self.tree_model.undo():
+            self.statusBar().showMessage("Nothing to undo.")
+            return
+        self._save_config()          # labels may have changed
+        self._after_name_change()
+        self.statusBar().showMessage("Undid last change.")
 
     def _save_config(self) -> None:
         try:

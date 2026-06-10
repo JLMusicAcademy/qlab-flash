@@ -147,6 +147,27 @@ def test_x32_placeholder_channel_is_counted_and_skipped():
                                  '["ch", 2, "mix", "on", "1"]')]
 
 
+def test_set_channel_name_renames_every_cue_for_that_channel():
+    # Two looks, each with channel 1 + 2 cues. Renaming channel 1 -> "Annie"
+    # must rename channel-1's cue in BOTH looks (and leave channel 2 alone).
+    top = [
+        grp("L1", "Cue 1", mic("a1", 1), mic("a2", 2)),
+        grp("L2", "Cue 2", mic("b1", 1), mic("b2", 2)),
+    ]
+    vals = {
+        "a1": ["ch", 1, "mix", "on", 0], "a2": ["ch", 2, "mix", "on", 0],
+        "b1": ["ch", 1, "mix", "on", 0], "b2": ["ch", 2, "mix", "on", 0],
+    }
+    m = GridModel(Config(mic_count=8))
+    m.build_tree(top, lambda uid: vals.get(uid))
+    changed = m.set_channel_name(1, "Annie")
+    assert {n.uid for n, _ in changed} == {"a1", "b1"}
+    # Both channel-1 cues are now name-dirty and queued for QLab.
+    assert set(m.name_writes()) == {("a1", "name", "Annie"),
+                                    ("b1", "name", "Annie")}
+    assert m.name_dirty_count() == 2
+
+
 def test_x32_ignores_non_onoff_parameters():
     # A fader cue (parameter 'fader') is not a mute control -> no checkbox.
     top = [grp("c1", "Cue 1", mic("m1", 1))]

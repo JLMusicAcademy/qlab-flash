@@ -26,11 +26,14 @@ class CueTreeModel(QAbstractItemModel):
     # (a look anchor and the mic cue beneath it share one underlying state).
     micChanged = Signal()
 
+    UNDO_LIMIT = 30
+
     def __init__(self, grid: GridModel, config: Config, parent=None):
         super().__init__(parent)
         self.grid = grid
         self.config = config
         self.mic_count = config.mic_count
+        self._undo = []      # stack of action entries; each is a list of items
 
     # -- tree structure -----------------------------------------------------
     def _node(self, index: QModelIndex) -> RowNode:
@@ -109,7 +112,10 @@ class CueTreeModel(QAbstractItemModel):
             return False
         node = self._node(index)
         if index.column() == 0 and role == Qt.EditRole:
-            node.name = str(value).strip()
+            new = str(value).strip()
+            if new != node.name:
+                self._push_undo([("name", node, node.name)])
+                node.name = new
             self.dataChanged.emit(index, index,
                                   [Qt.DisplayRole, Qt.EditRole, Qt.BackgroundRole])
             return True
@@ -117,7 +123,10 @@ class CueTreeModel(QAbstractItemModel):
             cell = node.cells.get(self.channel_for_column(index.column()))
             if cell is None:
                 return False
-            cell.unmuted = (Qt.CheckState(value) == Qt.Checked)
+            new_state = (Qt.CheckState(value) == Qt.Checked)
+            if new_state != cell.unmuted:
+                self._push_undo([("mic", cell, cell.unmuted)])
+                cell.unmuted = new_state
             self.dataChanged.emit(index, index,
                                   [Qt.CheckStateRole, Qt.BackgroundRole])
             self.micChanged.emit()
@@ -151,32 +160,72 @@ class CueTreeModel(QAbstractItemModel):
     # -- bulk operations on selected indexes --------------------------------
     def set_cells(self, indexes: Iterable[QModelIndex], unmuted: bool) -> int:
         seen = set()
-        changed = 0
+        undo = []
         for index in indexes:
             cell = self._cell_at(index)
             if cell is None or id(cell) in seen:
                 continue
             seen.add(id(cell))
             if cell.unmuted != unmuted:
+                undo.append(("mic", cell, cell.unmuted))
                 cell.unmuted = unmuted
-                changed += 1
-        if changed:
+        if undo:
+            self._push_undo(undo)
             self.micChanged.emit()
-        return changed
+        return len(undo)
 
     def toggle_cells(self, indexes: Iterable[QModelIndex]) -> int:
         seen = set()
-        changed = 0
+        undo = []
         for index in indexes:
             cell = self._cell_at(index)
             if cell is None or id(cell) in seen:
                 continue
             seen.add(id(cell))           # dedupe aliased cells so we flip once
+            undo.append(("mic", cell, cell.unmuted))
             cell.unmuted = not cell.unmuted
-            changed += 1
-        if changed:
+        if undo:
+            self._push_undo(undo)
             self.micChanged.emit()
-        return changed
+        return len(undo)
+
+    # -- renaming a whole mic channel (pushes to QLab cue names) ------------
+    def rename_channel(self, channel: int, name: str) -> int:
+        """Set the column label and rename every cue for this channel.
+
+        The cue renames are staged (name-dirty) and pushed to QLab on submit.
+        Returns the number of cues affected.
+        """
+        name = (name or "").strip()
+        undo = [("label", channel, self.config.label_for(channel))]
+        self.config.set_label(channel, name)
+        for node, old_name in self.grid.set_channel_name(channel, name):
+            undo.append(("name", node, old_name))
+        self._push_undo(undo)
+        self.micChanged.emit()
+        return len(undo) - 1   # minus the label entry
+
+    # -- undo (last UNDO_LIMIT actions) ------------------------------------
+    def _push_undo(self, items: list) -> None:
+        self._undo.append(items)
+        if len(self._undo) > self.UNDO_LIMIT:
+            self._undo.pop(0)
+
+    def can_undo(self) -> bool:
+        return bool(self._undo)
+
+    def undo(self) -> bool:
+        if not self._undo:
+            return False
+        for kind, obj, old in reversed(self._undo.pop()):
+            if kind == "mic":
+                obj.unmuted = old
+            elif kind == "name":
+                obj.name = old
+            elif kind == "label":
+                self.config.set_label(obj, old)
+        self.micChanged.emit()
+        return True
 
     def _cell_at(self, index: QModelIndex):
         if not index.isValid() or index.column() == 0:

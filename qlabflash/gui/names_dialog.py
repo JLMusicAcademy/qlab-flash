@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFormLayout, QLineEdit, QPushButton, QScrollArea,
-    QVBoxLayout, QWidget,
+    QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit, QPushButton,
+    QScrollArea, QVBoxLayout, QWidget,
 )
 
 from ..config import Config
@@ -15,10 +15,15 @@ class NamesDialog(QDialog):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("Mic names")
-        self.resize(300, 560)
+        self.resize(320, 600)
         self._edits = {}
 
         layout = QVBoxLayout(self)
+        info = QLabel("Name each mic (e.g. an actor/role). The name shows in the "
+                      "column header and renames that channel's cue in every "
+                      "look — pushed to QLab on Submit.")
+        info.setWordWrap(True)
+        layout.addWidget(info)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -49,3 +54,7 @@ class NamesDialog(QDialog):
         """Write the edited names back into the config object."""
         for chan, edit in self._edits.items():
             self.config.set_label(chan, edit.text())
+
+    def values(self) -> dict:
+        """The names currently entered, keyed by channel number."""
+        return {chan: edit.text() for chan, edit in self._edits.items()}
