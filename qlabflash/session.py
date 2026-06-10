@@ -28,13 +28,12 @@ class WorkspaceSession:
 
     def load_grid(self, cue_list_index: int = 0,
                   progress: Optional[Callable[[str], None]] = None) -> GridModel:
-        """Read the mic state for a cue list and build the worksheet tree.
+        """Re-read a cue list from QLab and build the worksheet tree.
 
-        Builds a *fresh* GridModel rather than mutating the one currently shown,
-        so reloading can't corrupt the live view from the worker thread.
+        Always re-fetches the cue lists so edits made in QLab (new cues,
+        renames, channel changes) show up on every load/reload.
         """
-        if not self.cue_lists:
-            self.fetch_cue_lists()
+        self.fetch_cue_lists()
         if not self.cue_lists:
             raise QLabError("No cue lists found in this workspace.")
         cue_list = self.cue_lists[min(cue_list_index, len(self.cue_lists) - 1)]

@@ -47,7 +47,7 @@ class MainWindow(QMainWindow):
         self.resize(1150, 720)
         self._build_ui()
         self._wire_logging()
-        self._load_cue_lists()
+        self._load_grid(0)
 
     # -- UI construction ----------------------------------------------------
     def _build_ui(self) -> None:
@@ -161,26 +161,17 @@ class MainWindow(QMainWindow):
         self.client.set_logger(logger)
 
     # -- loading ------------------------------------------------------------
-    def _load_cue_lists(self) -> None:
-        self.statusBar().showMessage("Reading cue lists…")
-        self._set_busy(True)
-
-        def work(progress):
-            return self.session.fetch_cue_lists()
-
-        def done(cue_lists):
-            self.cuelist_combo.blockSignals(True)
-            self.cuelist_combo.clear()
-            for cl in cue_lists:
-                self.cuelist_combo.addItem(cl.name or cl.uid)
-            self.cuelist_combo.blockSignals(False)
-            if cue_lists:
-                self._load_grid(0)
-            else:
-                self._set_busy(False)
-                self.statusBar().showMessage("No cue lists in this workspace.")
-
-        run_async(work, on_done=done, on_error=self._on_error)
+    def _sync_cuelist_combo(self) -> None:
+        """Refresh the cue-list dropdown from the freshly-read cue lists."""
+        cur = self.cuelist_combo.currentIndex()
+        self.cuelist_combo.blockSignals(True)
+        self.cuelist_combo.clear()
+        for cl in self.session.cue_lists:
+            self.cuelist_combo.addItem(cl.name or cl.uid)
+        if self.cuelist_combo.count():
+            self.cuelist_combo.setCurrentIndex(
+                max(0, min(cur, self.cuelist_combo.count() - 1)))
+        self.cuelist_combo.blockSignals(False)
 
     def _on_cuelist_changed(self, index: int) -> None:
         if index >= 0:
@@ -207,6 +198,7 @@ class MainWindow(QMainWindow):
             return self.session.load_grid(index, progress=progress)
 
         def done(model):
+            self._sync_cuelist_combo()
             # Detach the previous model first so nothing references stale rows.
             old = self.tree_model
             self.tree.setModel(None)
