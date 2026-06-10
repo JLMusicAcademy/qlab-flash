@@ -25,6 +25,7 @@ class CueTreeView(QTreeView):
         self.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.setItemDelegate(SelectionOutlineDelegate(self))
         self.setUniformRowHeights(True)
+        self.setAlternatingRowColors(True)
         self.setAllColumnsShowFocus(True)
         self.setExpandsOnDoubleClick(False)  # double-click edits the name instead
         self.setEditTriggers(QAbstractItemView.DoubleClicked

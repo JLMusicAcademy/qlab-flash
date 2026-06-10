@@ -10,8 +10,10 @@ reads as a clean outlined rectangle with the checkmarks still visible.
 from __future__ import annotations
 
 from PySide6.QtCore import QModelIndex, Qt
-from PySide6.QtGui import QPen
+from PySide6.QtGui import QColor, QPen
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
+
+GRID_COLOR = QColor(0, 0, 0, 30)        # faint spreadsheet grid lines
 
 
 class SelectionOutlineDelegate(QStyledItemDelegate):
@@ -26,6 +28,15 @@ class SelectionOutlineDelegate(QStyledItemDelegate):
         self.initStyleOption(opt, index)
         opt.state = option.state & ~QStyle.State_Selected
         super().paint(painter, opt, index)
+
+        # Faint grid lines (right + bottom of every cell) so the 32 mic columns
+        # are easy to read across.
+        painter.save()
+        painter.setPen(QPen(GRID_COLOR, 1))
+        r = option.rect
+        painter.drawLine(r.right(), r.top(), r.right(), r.bottom())
+        painter.drawLine(r.left(), r.bottom(), r.right(), r.bottom())
+        painter.restore()
 
         if not selected:
             return

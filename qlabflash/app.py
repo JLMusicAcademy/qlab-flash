@@ -31,7 +31,7 @@ def main(argv=None) -> int:
     args, _ = parser.parse_known_args(argv)
 
     # Import Qt lazily so non-GUI tooling (and tests) don't require PySide6.
-    from PySide6.QtGui import QIcon
+    from PySide6.QtGui import QColor, QIcon, QPalette
     from PySide6.QtWidgets import QApplication, QDialog
 
     from .config import Config
@@ -43,6 +43,25 @@ def main(argv=None) -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("QLab Flash")
     app.setApplicationDisplayName("QLab Flash")
+
+    # Force a consistent light theme. The mic grid relies on dark-on-light
+    # checkboxes and faint grid lines; macOS Dark Mode renders those nearly
+    # invisible, so we pin the Fusion style with an explicit light palette.
+    app.setStyle("Fusion")
+    pal = QPalette()
+    pal.setColor(QPalette.Window, QColor("#ECECEC"))
+    pal.setColor(QPalette.WindowText, QColor("#1A1A1A"))
+    pal.setColor(QPalette.Base, QColor("#FFFFFF"))
+    pal.setColor(QPalette.AlternateBase, QColor("#F3F5F8"))
+    pal.setColor(QPalette.Text, QColor("#1A1A1A"))
+    pal.setColor(QPalette.Button, QColor("#E6E6E6"))
+    pal.setColor(QPalette.ButtonText, QColor("#1A1A1A"))
+    pal.setColor(QPalette.Highlight, QColor("#2C6BBF"))
+    pal.setColor(QPalette.HighlightedText, QColor("#FFFFFF"))
+    pal.setColor(QPalette.ToolTipBase, QColor("#FFFFE6"))
+    pal.setColor(QPalette.ToolTipText, QColor("#1A1A1A"))
+    pal.setColor(QPalette.PlaceholderText, QColor("#8A8A8A"))
+    app.setPalette(pal)
 
     icon_path = _resource(os.path.join("assets", "icon.png"))
     if os.path.exists(icon_path):
