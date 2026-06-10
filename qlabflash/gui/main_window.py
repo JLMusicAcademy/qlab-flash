@@ -220,9 +220,17 @@ class MainWindow(QMainWindow):
             self._collapse_to_looks()
             self._set_busy(False)
             self._refresh_dirty()
-            self.statusBar().showMessage(
-                f"Loaded {len(model.anchors())} mic look(s) "
-                f"across {sum(1 for _ in model.iter_rows())} cue(s).")
+            looks = len(model.anchors())
+            total = sum(1 for _ in model.iter_rows())
+            if looks == 0 and model.placeholder_count:
+                msg = (f"Found {model.placeholder_count} On/Off cue(s), but their "
+                       f"Channel is a {{channel}} placeholder. In QLab, set each "
+                       f"cue's Channel to a number (01–32) so it maps to a mic.")
+                self.statusBar().showMessage(msg)
+                QMessageBox.information(self, "Cues need a channel number", msg)
+            else:
+                self.statusBar().showMessage(
+                    f"Loaded {looks} mic look(s) across {total} cue(s).")
 
         run_async(work, on_done=done, on_error=self._on_error,
                   on_progress=lambda msg: self.statusBar().showMessage(msg))

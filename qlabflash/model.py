@@ -138,6 +138,12 @@ class GridModel:
         self.config = config
         self.roots: List[RowNode] = []
         self._pattern = re.compile(config.channel_pattern)
+        # Count of On/Off cues skipped because their channel was a placeholder.
+        self._placeholder_count = 0
+
+    @property
+    def placeholder_count(self) -> int:
+        return self._placeholder_count
 
     # -- Parsing QLab message text -----------------------------------------
     def parse_channel(self, text: str) -> Optional[tuple]:
@@ -170,13 +176,16 @@ class GridModel:
             return None
         if str(pv[3]).lower() != "on":          # only the On/Off parameter
             return None
+        # It's a channel On/Off cue. The channel must be a concrete number; if
+        # it's a placeholder/variable (e.g. {channel} -> None), we can't map it
+        # to a mic column, so count it for a helpful message and skip.
         chan = pv[1]
-        if not isinstance(chan, int):
-            try:
-                chan = int(chan)
-            except (TypeError, ValueError):
-                return None
-        if chan < 1 or chan > self.config.mic_count:
+        try:
+            chan = int(chan)
+        except (TypeError, ValueError):
+            chan = None
+        if chan is None or chan < 1 or chan > self.config.mic_count:
+            self._placeholder_count += 1
             return None
         try:
             value = int(pv[-1])
@@ -205,6 +214,7 @@ class GridModel:
     # -- Building the tree -------------------------------------------------
     def build_tree(self, top_level_cues: List[Cue],
                    get_text: Callable[[str], Optional[str]]) -> List[RowNode]:
+        self._placeholder_count = 0
         roots = [self._make_node(cue, None, get_text) for cue in top_level_cues]
         for root in roots:
             self._annotate(root, parent_unique=False)
@@ -270,9 +280,13 @@ class GridModel:
         """``(uid, property, osc_value)`` to set this cell's state in QLab."""
         if cell.params is not None:
             # Structured X32 cue: rewrite parameterValues with the new on/off
-            # value at the end, sent as a JSON string.
+            # value at the end, sent as a JSON string. Preserve the value's
+            # original type (QLab may store it as a string like "0").
             pv = list(cell.params)
-            pv[-1] = self.config.channel_state_value(cell.unmuted)
+            new_value = self.config.channel_state_value(cell.unmuted)
+            if isinstance(pv[-1], str):
+                new_value = str(new_value)
+            pv[-1] = new_value
             return cell.cue_uid, "parameterValues", json.dumps(pv)
         # Custom-OSC cue: rewrite the message text.
         return cell.cue_uid, self.config.osc_message_property, self.message_for(cell)

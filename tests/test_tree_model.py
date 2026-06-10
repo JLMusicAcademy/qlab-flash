@@ -128,6 +128,25 @@ def test_x32_parameter_values_read_and_write():
     assert writes == [("m1", "parameterValues", '["ch", 1, "mix", "on", 1]')]
 
 
+def test_x32_placeholder_channel_is_counted_and_skipped():
+    # Channel = None ({channel} placeholder) -> no cell, but counted so the UI
+    # can explain why. Value stored as a string is preserved on write.
+    top = [grp("c1", "Cue 1", mic("m1", 1), mic("m2", 2))]
+    values = {
+        "m1": ["ch", None, "mix", "on", "0"],    # placeholder channel
+        "m2": ["ch", 2, "mix", "on", "0"],       # concrete channel, string value
+    }
+    m = GridModel(Config(mic_count=8))
+    m.build_tree(top, lambda uid: values.get(uid))
+    assert m.placeholder_count == 1
+    anchor = m.anchors()[0]
+    assert set(anchor.cells) == {2}              # only the concrete one
+    anchor.cells[2].unmuted = True
+    # Value written back as a string "1" to match how it was stored.
+    assert m.dirty_writes() == [("m2", "parameterValues",
+                                 '["ch", 2, "mix", "on", "1"]')]
+
+
 def test_x32_ignores_non_onoff_parameters():
     # A fader cue (parameter 'fader') is not a mute control -> no checkbox.
     top = [grp("c1", "Cue 1", mic("m1", 1))]
