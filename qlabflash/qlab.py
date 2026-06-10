@@ -188,6 +188,36 @@ class QLabClient:
         addr = f"/workspace/{workspace_id}/cue_id/{cue_uid}/{prop}"
         self.send(addr, value)
 
+    def probe_cue(self, workspace_id: str, cue_uid: str, keys,
+                  timeout: float = 2.0):
+        """Query many property ``keys`` of one cue at once (diagnostic).
+
+        Returns ``{key: (status, data)}`` where data is None / missing if the
+        property doesn't exist. Used to discover how a cue stores its values.
+        """
+        results = {}
+        waiters = {}
+        with self._lock:
+            for k in keys:
+                wkey = f"/cue_id/{cue_uid}/{k}"
+                q: "queue.Queue[Any]" = queue.Queue(maxsize=1)
+                self._waiters[wkey] = q
+                waiters[k] = q
+        for k in keys:
+            self.send(f"/workspace/{workspace_id}/cue_id/{cue_uid}/{k}")
+        deadline = time.time() + timeout
+        for k, q in waiters.items():
+            remaining = max(0.0, deadline - time.time())
+            try:
+                reply = q.get(timeout=remaining)
+                results[k] = (reply.get("status"), reply.get("data"))
+            except queue.Empty:
+                results[k] = ("(no reply)", None)
+            finally:
+                with self._lock:
+                    self._waiters.pop(f"/cue_id/{cue_uid}/{k}", None)
+        return results
+
     # -- internals ----------------------------------------------------------
     def _recv_loop(self) -> None:
         if self.transport == "tcp":

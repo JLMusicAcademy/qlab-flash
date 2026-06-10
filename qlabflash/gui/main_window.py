@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 from ..config import Config
 from ..qlab import QLabClient
 from ..session import WorkspaceSession
+from .diagnose_dialog import DiagnoseDialog
 from .header import MicHeaderView
 from .names_dialog import NamesDialog
 from .tree_model import CueTreeModel
@@ -77,6 +78,12 @@ class MainWindow(QMainWindow):
             "just that one.")
         self.names_btn.clicked.connect(self._edit_names)
         top.addWidget(self.names_btn)
+
+        self.diagnose_btn = QPushButton("Diagnose…")
+        self.diagnose_btn.setToolTip(
+            "Inspect a cue's QLab properties (for troubleshooting).")
+        self.diagnose_btn.clicked.connect(self._diagnose)
+        top.addWidget(self.diagnose_btn)
 
         self.reload_btn = QPushButton("Reload")
         self.reload_btn.clicked.connect(self._reload)
@@ -181,6 +188,14 @@ class MainWindow(QMainWindow):
 
     def _reload(self) -> None:
         self._load_grid(max(0, self.cuelist_combo.currentIndex()))
+
+    def _diagnose(self) -> None:
+        if not self.session.cue_lists:
+            QMessageBox.information(self, "Diagnose",
+                                    "Connect and load a workspace first.")
+            return
+        DiagnoseDialog(self.client, self.session.workspace_id,
+                       self.session.cue_lists, self).exec()
 
     def _load_grid(self, index: int) -> None:
         if self._has_unsaved() and not self._confirm_discard():
