@@ -28,9 +28,10 @@ A checked box means unmuted (channel ON); an unchecked box means muted (OFF).
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Dict, Iterator, List, Optional
+from typing import Any, Callable, Dict, Iterator, List, Optional
 
 from .config import Config
 
@@ -45,6 +46,9 @@ class MicCell:
     cue_uid: Optional[str] = None      # Backing QLab cue, if one exists.
     original_unmuted: Optional[bool] = None  # State read from QLab.
     unmuted: bool = False              # Current (possibly edited) state.
+    # For structured X32 cues, the original parameterValues list so we can
+    # write it back with the on/off value changed. None for custom-OSC cues.
+    params: Optional[list] = None
 
     @property
     def exists(self) -> bool:
@@ -152,6 +156,45 @@ class GridModel:
             unmuted = self.config.is_unmuted_value(int(state_str))
         return chan, unmuted
 
+    def parse_parameter_values(self, pv) -> Optional[tuple]:
+        """Recognise an X32 channel on/off cue from its ``parameterValues``.
+
+        QLab stores these as e.g. ``['ch', 1, 'mix', 'on', 0]`` =
+        ``[target, channel, section, parameter, value]``. We treat the
+        ``on`` parameter as the mute control (0 = muted, 1 = unmuted).
+        Returns ``(channel, unmuted, params_list)`` or None.
+        """
+        if not isinstance(pv, (list, tuple)) or len(pv) < 5:
+            return None
+        if str(pv[0]).lower() != "ch" or str(pv[2]).lower() != "mix":
+            return None
+        if str(pv[3]).lower() != "on":          # only the On/Off parameter
+            return None
+        chan = pv[1]
+        if not isinstance(chan, int):
+            try:
+                chan = int(chan)
+            except (TypeError, ValueError):
+                return None
+        if chan < 1 or chan > self.config.mic_count:
+            return None
+        try:
+            value = int(pv[-1])
+        except (TypeError, ValueError):
+            return None
+        return chan, self.config.is_unmuted_value(value), list(pv)
+
+    def _parse_value(self, value) -> Optional[tuple]:
+        """Dispatch on the cue's value: a list (X32 params) or text (OSC)."""
+        if isinstance(value, (list, tuple)):
+            return self.parse_parameter_values(value)
+        if isinstance(value, str):
+            parsed = self.parse_channel(value)
+            if parsed is None:
+                return None
+            return parsed[0], parsed[1], None
+        return None
+
     def candidate_uids(self, top_level_cues: List[Cue]) -> List[str]:
         """Every leaf cue under the given cues — the mic-cue candidates to fetch."""
         uids: List[str] = []
@@ -172,12 +215,13 @@ class GridModel:
                    get_text: Callable[[str], Optional[str]]) -> RowNode:
         node = RowNode(uid=cue.uid, number=cue.number, name=cue.name,
                        type=cue.type, original_name=cue.name, parent=parent)
-        parsed = self.parse_channel(get_text(cue.uid) or "")
+        parsed = self._parse_value(get_text(cue.uid))
         if parsed is not None:
-            chan, unmuted = parsed
+            chan, unmuted, params = parsed
             state = bool(unmuted) if unmuted is not None else False
             node.own_cell = MicCell(channel=chan, cue_uid=cue.uid,
-                                    original_unmuted=state, unmuted=state)
+                                    original_unmuted=state, unmuted=state,
+                                    params=params)
         node.children = [self._make_node(c, node, get_text) for c in cue.children]
         return node
 
@@ -222,17 +266,26 @@ class GridModel:
                 yield node.own_cell
 
     # -- Producing writes --------------------------------------------------
+    def _write_for(self, cell: MicCell) -> tuple:
+        """``(uid, property, osc_value)`` to set this cell's state in QLab."""
+        if cell.params is not None:
+            # Structured X32 cue: rewrite parameterValues with the new on/off
+            # value at the end, sent as a JSON string.
+            pv = list(cell.params)
+            pv[-1] = self.config.channel_state_value(cell.unmuted)
+            return cell.cue_uid, "parameterValues", json.dumps(pv)
+        # Custom-OSC cue: rewrite the message text.
+        return cell.cue_uid, self.config.osc_message_property, self.message_for(cell)
+
     def dirty_writes(self) -> List[tuple]:
-        return [(c.cue_uid, self.message_for(c))
-                for c in self._own_cells() if c.dirty]
+        return [self._write_for(c) for c in self._own_cells() if c.dirty]
 
     def all_writes(self) -> List[tuple]:
-        return [(c.cue_uid, self.message_for(c))
-                for c in self._own_cells() if c.exists]
+        return [self._write_for(c) for c in self._own_cells() if c.exists]
 
     def name_writes(self) -> List[tuple]:
-        """`(uid, new_name)` for every cue whose name was edited."""
-        return [(n.uid, n.name) for n in self.iter_rows()
+        """`(uid, 'name', new_name)` for every cue whose name was edited."""
+        return [(n.uid, "name", n.name) for n in self.iter_rows()
                 if n.name_dirty and n.uid]
 
     def message_for(self, cell: MicCell) -> str:

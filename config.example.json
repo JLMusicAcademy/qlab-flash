@@ -10,6 +10,7 @@
   "mic_count": 32,
   "channel_labels": {"1": "Doug", "2": "Steve", "3": "Mary"},
 
+  "read_property": "parameterValues",
   "osc_message_property": "customString",
   "channel_pattern": "^\\s*/ch/0*(?P<chan>\\d{1,2})/mix/on(?:\\s+(?P<state>\\d+))?\\s*$",
   "write_template": "/ch/{chan:02d}/mix/on {state}",

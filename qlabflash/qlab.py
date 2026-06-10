@@ -148,13 +148,15 @@ class QLabClient:
 
     def get_cue_properties(self, workspace_id: str, cue_uids: List[str],
                            prop: str, chunk_size: int = 48,
-                           timeout: Optional[float] = None) -> Dict[str, Optional[str]]:
+                           timeout: Optional[float] = None,
+                           raw: bool = False) -> Dict[str, Optional[str]]:
         """Fetch ``prop`` for many cues, pipelining requests for speed.
 
         Sending all queries up front and then collecting replies avoids paying
         a full round-trip latency per cue, which matters for shows with
         thousands of mic cues. Requests are sent in chunks to avoid flooding
-        the UDP socket. Missing replies come back as ``None``.
+        the UDP socket. Missing replies come back as ``None``. With ``raw`` the
+        reply data is returned unchanged (e.g. a list for ``parameterValues``).
         """
         results: Dict[str, Optional[str]] = {}
         for start in range(0, len(cue_uids), chunk_size):
@@ -174,7 +176,10 @@ class QLabClient:
                 try:
                     reply = q.get(timeout=remaining)
                     data = reply.get("data")
-                    results[uid] = None if data is None else str(data)
+                    if raw:
+                        results[uid] = data
+                    else:
+                        results[uid] = None if data is None else str(data)
                 except queue.Empty:
                     results[uid] = None
                 finally:

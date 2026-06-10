@@ -45,10 +45,11 @@ class WorkspaceSession:
         if progress:
             progress(f"Reading {len(leaf_uids)} cues...")
 
-        prop = self.config.osc_message_property
-        texts = self.client.get_cue_properties(self.workspace_id, leaf_uids, prop)
+        prop = self.config.read_property
+        values = self.client.get_cue_properties(
+            self.workspace_id, leaf_uids, prop, raw=True)
 
-        model.build_tree(top_level, lambda uid: texts.get(uid))
+        model.build_tree(top_level, lambda uid: values.get(uid))
         self.model = model
         return model
 
@@ -74,16 +75,10 @@ class WorkspaceSession:
         mic_writes = (self.model.dirty_writes() if only_dirty
                       else self.model.all_writes())
         name_writes = self.model.name_writes()
-        prop = self.config.osc_message_property
         total = len(mic_writes) + len(name_writes)
         done = 0
-        for uid, message in mic_writes:
-            self.client.set_cue_property(self.workspace_id, uid, prop, message)
-            done += 1
-            if progress:
-                progress(done, total)
-        for uid, name in name_writes:
-            self.client.set_cue_property(self.workspace_id, uid, "name", name)
+        for uid, prop, value in mic_writes + name_writes:
+            self.client.set_cue_property(self.workspace_id, uid, prop, value)
             done += 1
             if progress:
                 progress(done, total)

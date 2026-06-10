@@ -39,9 +39,15 @@ class Config:
     channel_labels: Dict[str, str] = field(default_factory=dict)
 
     # --- How mic state is stored in QLab cues ------------------------------
-    # The QLab cue property that holds a network cue's outgoing OSC text. This
-    # has historically been "customString". If your QLab build reports the
-    # message under a different property, change it here.
+    # The QLab cue property the app reads to determine each mic's state. QLab 5
+    # X32 "network audio" cues expose their value as a structured list under
+    # "parameterValues" (e.g. ['ch', 1, 'mix', 'on', 0]). Older / custom-OSC
+    # setups instead store a text message under "customString" — set this to
+    # "customString" for those.
+    read_property: str = "parameterValues"
+
+    # Property used to WRITE back a text OSC message (only for custom-OSC cues,
+    # i.e. when a cue isn't a structured parameterValues cue).
     osc_message_property: str = "customString"
 
     # Regex used to recognise a mic cue and pull out the channel number and its

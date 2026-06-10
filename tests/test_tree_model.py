@@ -91,7 +91,7 @@ def test_name_edits_tracked_and_written():
     assert m.name_dirty_count() == 0
     node.name = "Top of Act 1"
     assert node.name_dirty
-    assert m.name_writes() == [("c1", "Top of Act 1")]
+    assert m.name_writes() == [("c1", "name", "Top of Act 1")]
     assert m.name_dirty_count() == 1
     m.mark_committed()
     assert m.name_dirty_count() == 0
@@ -103,5 +103,35 @@ def test_mic_writes_only_dirty():
     m = build(top, texts)
     anchor = m.anchors()[0]
     anchor.cells[1].unmuted = False
-    assert m.dirty_writes() == [("m1", "/ch/01/mix/on 0")]
+    # Custom-OSC cue: writes the message text to customString.
+    assert m.dirty_writes() == [("m1", "customString", "/ch/01/mix/on 0")]
     assert m.mic_dirty_count() == 1
+
+
+def test_x32_parameter_values_read_and_write():
+    # QLab 5 X32 "network audio" cues: parameterValues lists, not text.
+    top = [grp("c1", "Cue 1",
+               mic("m1", 1), mic("m2", 2))]
+    values = {
+        "m1": ["ch", 1, "mix", "on", 0],     # ch 1 muted
+        "m2": ["ch", 2, "mix", "on", 1],     # ch 2 unmuted
+    }
+    m = GridModel(Config(mic_count=8))
+    m.build_tree(top, lambda uid: values.get(uid))
+    anchor = m.anchors()[0]
+    assert anchor.cells[1].unmuted is False
+    assert anchor.cells[2].unmuted is True
+
+    # Unmute channel 1 -> writes parameterValues back as JSON with value 1.
+    anchor.cells[1].unmuted = True
+    writes = m.dirty_writes()
+    assert writes == [("m1", "parameterValues", '["ch", 1, "mix", "on", 1]')]
+
+
+def test_x32_ignores_non_onoff_parameters():
+    # A fader cue (parameter 'fader') is not a mute control -> no checkbox.
+    top = [grp("c1", "Cue 1", mic("m1", 1))]
+    values = {"m1": ["ch", 1, "mix", "fader", 0]}
+    m = GridModel(Config(mic_count=8))
+    m.build_tree(top, lambda uid: values.get(uid))
+    assert m.anchors() == [] or all(not a.cells for a in m.anchors())
