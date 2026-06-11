@@ -85,10 +85,24 @@ Numbers are hard to read at a glance, so you can give each mic a name:
 - **double-click a mic's column header** to rename just that one.
 
 Named mics show the name vertically under the number in the header (like a
-console channel strip). Names are saved to your config file, so they persist
-between sessions — set up your cast once and reuse it. This is a **display aid
-only**; naming a mic never changes anything in QLab. (You can also pre-fill
-names via the `channel_labels` config key.)
+console channel strip), and the names persist between sessions.
+
+**Renaming a mic does three things on Submit:**
+
+1. Labels that column in QLab Flash.
+2. Renames that channel's **cue in every look** in QLab (e.g. every `Mic 1` cue
+   becomes "Annie") — handy since shows usually define all 32 mics in each cue.
+3. Sets the **channel name on the X32** (the scribble strip), via
+   `/ch/NN/config/name`, if you've entered the mixer's IP under **Mixer…**.
+
+So your cast list flows from one place to the worksheet, the QLab cue names, and
+the console. (Set the X32 IP once in **Mixer…**; leave it blank to skip the
+scribble-strip part.)
+
+### Undo
+
+**⌘Z** (or the **Undo** button) reverses the last **30** actions — checkbox
+changes (single, bulk, or keyboard) and any name edits.
 
 ### Renaming cues in QLab (right in the worksheet)
 

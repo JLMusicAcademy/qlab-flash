@@ -66,11 +66,12 @@ class WorkspaceSession:
     # -- submitting ---------------------------------------------------------
     def submit(self, only_dirty: bool = True,
                progress: Optional[Callable[[int, int], None]] = None) -> tuple:
-        """Push mic-state and cue-name changes to QLab.
+        """Push mic states + cue names to QLab and mic names to the X32.
 
-        Returns ``(mic_count, name_count)``. Mic changes honour ``only_dirty``;
-        cue-name changes are always just the edited ones.
+        Returns ``(mic_count, name_count, scribble_count)``.
         """
+        from .mixer import send_scribble_names
+
         mic_writes = (self.model.dirty_writes() if only_dirty
                       else self.model.all_writes())
         name_writes = self.model.name_writes()
@@ -81,5 +82,11 @@ class WorkspaceSession:
             done += 1
             if progress:
                 progress(done, total)
+
+        # Mic names also go to the X32's scribble strips (live mixer setting).
+        scribble = self.model.scribble_writes(only_dirty=only_dirty)
+        sent = send_scribble_names(self.config.x32_host, self.config.x32_port,
+                                   self.config.scribble_template, scribble)
+
         self.model.mark_committed()
-        return len(mic_writes), len(name_writes)
+        return len(mic_writes), len(name_writes), sent

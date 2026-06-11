@@ -140,6 +140,8 @@ class GridModel:
         self._pattern = re.compile(config.channel_pattern)
         # Count of On/Off cues skipped because their channel was a placeholder.
         self._placeholder_count = 0
+        # Snapshot of mic names at load, to detect scribble-strip changes.
+        self._label_baseline = dict(config.channel_labels)
 
     @property
     def placeholder_count(self) -> int:
@@ -215,6 +217,7 @@ class GridModel:
     def build_tree(self, top_level_cues: List[Cue],
                    get_text: Callable[[str], Optional[str]]) -> List[RowNode]:
         self._placeholder_count = 0
+        self._label_baseline = dict(self.config.channel_labels)
         roots = [self._make_node(cue, None, get_text) for cue in top_level_cues]
         for root in roots:
             self._annotate(root, parent_unique=False)
@@ -331,6 +334,26 @@ class GridModel:
                 node.name = name
         return changed
 
+    def scribble_writes(self, only_dirty: bool = True) -> List[tuple]:
+        """`(channel, name)` mic names to push to the X32 scribble strips.
+
+        ``only_dirty`` sends just the names changed since load; otherwise every
+        named channel (a full mixer sync).
+        """
+        out = []
+        for chan in range(1, self.config.mic_count + 1):
+            name = self.config.label_for(chan)
+            base = self._label_baseline.get(str(chan), "")
+            if only_dirty:
+                if name != base:
+                    out.append((chan, name))
+            elif name:
+                out.append((chan, name))
+        return out
+
+    def scribble_dirty_count(self) -> int:
+        return len(self.scribble_writes(only_dirty=True))
+
     def mark_committed(self) -> None:
         """After a successful submit, current state becomes the baseline."""
         for cell in self._own_cells():
@@ -338,3 +361,4 @@ class GridModel:
                 cell.original_unmuted = cell.unmuted
         for node in self.iter_rows():
             node.original_name = node.name
+        self._label_baseline = dict(self.config.channel_labels)

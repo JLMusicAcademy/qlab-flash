@@ -239,3 +239,6 @@ class CueTreeModel(QAbstractItemModel):
 
     def name_dirty_count(self) -> int:
         return self.grid.name_dirty_count()
+
+    def scribble_dirty_count(self) -> int:
+        return self.grid.scribble_dirty_count()

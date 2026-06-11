@@ -33,6 +33,13 @@ class Config:
     # --- Mic grid ----------------------------------------------------------
     mic_count: int = 32
 
+    # --- X32 mixer (for scribble-strip channel names) ----------------------
+    # The mixer's IP, so renaming a mic can also set the channel name on the
+    # console. Blank disables scribble-strip updates. The X32 listens on 10023.
+    x32_host: str = ""
+    x32_port: int = 10023
+    scribble_template: str = "/ch/{chan:02d}/config/name"
+
     # Friendly per-mic names shown in the column headers, e.g. {"1": "Doug"}.
     # Keyed by channel number (as a string, since JSON object keys are strings).
     # Purely a display aid — it never changes anything in QLab.

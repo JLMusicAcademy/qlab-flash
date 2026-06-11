@@ -168,6 +168,48 @@ def test_set_channel_name_renames_every_cue_for_that_channel():
     assert m.name_dirty_count() == 2
 
 
+def test_scribble_writes_track_name_changes():
+    top = [grp("L1", "Cue 1", mic("a1", 1), mic("a2", 2))]
+    vals = {"a1": ["ch", 1, "mix", "on", 0], "a2": ["ch", 2, "mix", "on", 0]}
+    cfg = Config(mic_count=8)
+    m = GridModel(cfg)
+    m.build_tree(top, lambda uid: vals.get(uid))
+    assert m.scribble_writes() == []          # nothing changed yet
+    cfg.set_label(1, "Annie")
+    assert m.scribble_writes() == [(1, "Annie")]
+    # A full sync sends every named channel regardless of change.
+    assert m.scribble_writes(only_dirty=False) == [(1, "Annie")]
+    m.mark_committed()
+    assert m.scribble_writes() == []          # baseline updated after submit
+
+
+def test_scribble_sender_sends_osc_over_udp():
+    import socket
+    from qlabflash import osc
+    from qlabflash.mixer import send_scribble_names
+
+    srv = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    srv.bind(("127.0.0.1", 0))
+    srv.settimeout(2)
+    port = srv.getsockname()[1]
+    try:
+        n = send_scribble_names("127.0.0.1", port, "/ch/{chan:02d}/config/name",
+                                [(1, "Annie")])
+        assert n == 1
+        data, _ = srv.recvfrom(4096)
+        addr, args = osc.decode_message(data)
+        assert addr == "/ch/01/config/name"
+        assert args == ["Annie"]
+    finally:
+        srv.close()
+
+
+def test_scribble_sender_no_host_is_noop():
+    from qlabflash.mixer import send_scribble_names
+    assert send_scribble_names("", 10023, "/ch/{chan:02d}/config/name",
+                               [(1, "Annie")]) == 0
+
+
 def test_x32_ignores_non_onoff_parameters():
     # A fader cue (parameter 'fader') is not a mute control -> no checkbox.
     top = [grp("c1", "Cue 1", mic("m1", 1))]

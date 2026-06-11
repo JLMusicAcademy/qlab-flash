@@ -17,6 +17,7 @@ from ..qlab import QLabClient
 from ..session import WorkspaceSession
 from .diagnose_dialog import DiagnoseDialog
 from .header import MicHeaderView
+from .mixer_dialog import MixerDialog
 from .names_dialog import NamesDialog
 from .tree_model import CueTreeModel
 from .tree_view import CueTreeView
@@ -74,11 +75,18 @@ class MainWindow(QMainWindow):
 
         self.names_btn = QPushButton("Mic names…")
         self.names_btn.setToolTip(
-            "Give mics friendly names (e.g. actor names) shown in the column "
-            "headers. Tip: you can also double-click a mic's header to rename "
-            "just that one.")
+            "Name your mics (e.g. actor/role names). A name shows in the column "
+            "header, renames that channel's cue in every look, and sets the "
+            "channel name on the X32 — all applied when you Submit.")
         self.names_btn.clicked.connect(self._edit_names)
         top.addWidget(self.names_btn)
+
+        self.mixer_btn = QPushButton("Mixer…")
+        self.mixer_btn.setToolTip(
+            "Set the X32's IP address so mic names also update the console's "
+            "scribble strips.")
+        self.mixer_btn.clicked.connect(self._edit_mixer)
+        top.addWidget(self.mixer_btn)
 
         self.diagnose_btn = QPushButton("Diagnose…")
         self.diagnose_btn.setToolTip(
@@ -280,16 +288,27 @@ class MainWindow(QMainWindow):
             return
         chan = logical_index
         current = self.config.label_for(chan)
+        mixer = "the X32 channel name" if self.config.x32_host else \
+                "the X32 channel name (set the mixer IP in Mixer…)"
         name, ok = QInputDialog.getText(
             self, f"Name mic {chan}",
-            f"Name for mic {chan} (e.g. an actor/role). This also renames "
-            f"mic {chan}'s cue in every look (applied on Submit):",
+            f"Name for mic {chan} (e.g. an actor/role).\n\nOn Submit this will:\n"
+            f"  • label this column,\n"
+            f"  • rename mic {chan}'s cue in every look in QLab,\n"
+            f"  • set {mixer}.",
             text=current)
         if not ok or name.strip() == current:
             return
         self._apply_channel_name(chan, name)
         self._save_config()
         self._after_name_change()
+
+    def _edit_mixer(self) -> None:
+        dialog = MixerDialog(self.config, self)
+        if dialog.exec():
+            dialog.apply_to_config()
+            self._save_config()
+            self._refresh_dirty()
 
     def _edit_names(self) -> None:
         dialog = NamesDialog(self.config, self)
@@ -353,7 +372,8 @@ class MainWindow(QMainWindow):
         model = self.session.model
         mic_writes = model.dirty_writes() if only_dirty else model.all_writes()
         name_writes = model.name_writes()
-        if not mic_writes and not name_writes:
+        scribble = model.scribble_writes(only_dirty=only_dirty)
+        if not mic_writes and not name_writes and not scribble:
             QMessageBox.information(self, "Nothing to send",
                                     "There are no changes to submit.")
             return
@@ -362,9 +382,12 @@ class MainWindow(QMainWindow):
             parts.append(f"{len(mic_writes)} mic setting(s)")
         if name_writes:
             parts.append(f"{len(name_writes)} cue name(s)")
+        if scribble:
+            where = "X32" if self.config.x32_host else "X32 (no mixer IP set — will skip)"
+            parts.append(f"{len(scribble)} mixer name(s) → {where}")
         if QMessageBox.question(
-                self, "Submit to QLab",
-                "Send " + " and ".join(parts) + " to QLab now?",
+                self, "Submit",
+                "Send " + " and ".join(parts) + " now?",
                 QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
             return
 
@@ -375,13 +398,16 @@ class MainWindow(QMainWindow):
             return self.session.submit(only_dirty=only_dirty)
 
         def done(result):
-            mics, names = result
+            mics, names, scribble = result
             self._set_busy(False)
             self._refresh_dirty()
             if self.tree_model:
                 self.tree.viewport().update()
-            self.statusBar().showMessage(
-                f"Sent {mics} mic update(s) and {names} name change(s) to QLab.")
+            msg = (f"Sent {mics} mic update(s) and {names} cue name(s) to QLab"
+                   f", and {scribble} mixer name(s) to the X32.")
+            if scribble == 0 and names and not self.config.x32_host:
+                msg += "  (Set the mixer IP in Mixer… to update scribble strips.)"
+            self.statusBar().showMessage(msg)
 
         run_async(work, on_done=done, on_error=self._on_error)
 
@@ -398,7 +424,8 @@ class MainWindow(QMainWindow):
             return
         mics = self.tree_model.mic_dirty_count()
         names = self.tree_model.name_dirty_count()
-        if not mics and not names:
+        scribble = self.tree_model.scribble_dirty_count()
+        if not mics and not names and not scribble:
             self.dirty_label.setText("No changes")
         else:
             bits = []
@@ -406,8 +433,10 @@ class MainWindow(QMainWindow):
                 bits.append(f"{mics} mic")
             if names:
                 bits.append(f"{names} name")
+            if scribble:
+                bits.append(f"{scribble} mixer name")
             self.dirty_label.setText(" + ".join(bits) + " change(s) unsaved")
-        self.submit_btn.setEnabled(mics > 0 or names > 0)
+        self.submit_btn.setEnabled(mics > 0 or names > 0 or scribble > 0)
 
     def _has_unsaved(self) -> bool:
         return self._dirty_total() > 0

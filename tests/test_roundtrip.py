@@ -51,7 +51,7 @@ def test_load_grid_and_submit(mock_and_client):
     target = anchors[0].cells[5]
     new_state = not target.unmuted
     target.unmuted = new_state
-    mics, names = session.submit(only_dirty=True)
+    mics, names, scribble = session.submit(only_dirty=True)
     assert (mics, names) == (1, 0)
 
     # Give the mock a moment to apply the set, then re-read and confirm.
@@ -66,7 +66,7 @@ def test_submit_all(mock_and_client):
     config = Config(mic_count=32)
     session = WorkspaceSession(client, WORKSPACE_ID, config)
     session.load_grid()
-    mics, names = session.submit(only_dirty=False)
+    mics, names, scribble = session.submit(only_dirty=False)
     assert mics == 4 * 32 and names == 0
 
 
