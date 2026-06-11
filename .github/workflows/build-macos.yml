@@ -2,6 +2,11 @@ name: Build macOS app
 
 # Builds a self-contained "QLab Flash.app", wraps it in a drag-to-Applications
 # .dmg, and publishes it to the repo's Releases page for easy download.
+#
+# If the Developer ID signing secrets are present, the app is signed with a
+# hardened runtime, notarized by Apple, and stapled — so it opens with a normal
+# double-click everywhere (including managed Macs). Without those secrets it
+# falls back to an ad-hoc signature (works after a one-time Gatekeeper bypass).
 
 on:
   workflow_dispatch:
@@ -19,6 +24,8 @@ permissions:
 jobs:
   build:
     runs-on: macos-14          # Apple Silicon (arm64)
+    env:
+      SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -43,9 +50,43 @@ jobs:
       - name: Build app bundle
         run: pyinstaller --noconfirm --clean packaging/QLabFlash.spec
 
-      - name: Ad-hoc code sign
+      # --- Signing -------------------------------------------------------
+      - name: Import Developer ID certificate
+        if: env.SIGN_IDENTITY != ''
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/app-signing.keychain-db"
+          security create-keychain -p actions "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p actions "$KEYCHAIN"
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" \
+            -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: \
+            -s -k actions "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Sign app (Developer ID + hardened runtime)
+        if: env.SIGN_IDENTITY != ''
+        run: |
+          APP="dist/QLab Flash.app"
+          # Sign nested code inside-out, then the bundle with entitlements.
+          find "$APP/Contents" \( -name "*.dylib" -o -name "*.so" \) -type f \
+            -exec codesign --force --timestamp --options runtime \
+              --sign "$SIGN_IDENTITY" {} +
+          codesign --force --deep --timestamp --options runtime \
+            --entitlements packaging/entitlements.plist \
+            --sign "$SIGN_IDENTITY" "$APP"
+          codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Ad-hoc sign (fallback when unsigned)
+        if: env.SIGN_IDENTITY == ''
         run: codesign --force --deep --sign - "dist/QLab Flash.app"
 
+      # --- Package -------------------------------------------------------
       - name: Build drag-to-Applications .dmg
         run: |
           brew install create-dmg
@@ -63,6 +104,24 @@ jobs:
             "dist/QLab Flash.app" \
           || hdiutil create -volname "QLab Flash" -srcfolder "dist/QLab Flash.app" -ov -format UDZO "QLab-Flash.dmg"
 
+      - name: Sign & notarize the .dmg
+        if: env.SIGN_IDENTITY != ''
+        env:
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: |
+          codesign --force --timestamp --sign "$SIGN_IDENTITY" "QLab-Flash.dmg"
+          echo "$ASC_API_KEY_P8" | base64 --decode > "$RUNNER_TEMP/asc.p8"
+          xcrun notarytool submit "QLab-Flash.dmg" \
+            --key "$RUNNER_TEMP/asc.p8" \
+            --key-id "$ASC_API_KEY_ID" \
+            --issuer "$ASC_API_ISSUER_ID" \
+            --wait
+          xcrun stapler staple "QLab-Flash.dmg"
+          xcrun stapler validate "QLab-Flash.dmg"
+          rm -f "$RUNNER_TEMP/asc.p8"
+
       - name: Publish to Releases
         uses: softprops/action-gh-release@v2
         with:
@@ -71,10 +130,8 @@ jobs:
           body: |
             ## Install
             1. Download **QLab-Flash.dmg** below.
-            2. Double-click it; a window opens.
-            3. Drag **QLab Flash** onto the **Applications** folder.
-            4. First launch only: right-click the app → **Open** (it's not
-               Apple-signed), then click Open.
+            2. Open it and drag **QLab Flash** onto the **Applications** folder.
+            3. Double-click to launch.
 
             Self-contained — no Python, Homebrew, or other setup required.
             For Apple Silicon Macs (M1/M2/M3/M4).
