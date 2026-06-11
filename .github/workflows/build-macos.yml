@@ -61,7 +61,9 @@ jobs:
           security create-keychain -p actions "$KEYCHAIN"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p actions "$KEYCHAIN"
-          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          # Strip any stray whitespace/CR that pasting can add to the secrets.
+          echo "$CERT_P12" | tr -d '[:space:]' | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          CERT_PASSWORD="$(printf '%s' "$CERT_PASSWORD" | tr -d '\r\n')"
           echo "decoded .p12 size: $(wc -c < "$RUNNER_TEMP/cert.p12") bytes"
           echo "first bytes (30 82 = valid PKCS#12): $(head -c 2 "$RUNNER_TEMP/cert.p12" | od -An -tx1)"
           security import "$RUNNER_TEMP/cert.p12" -f pkcs12 -k "$KEYCHAIN" \
