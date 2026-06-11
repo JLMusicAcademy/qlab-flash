@@ -3,21 +3,20 @@
 from __future__ import annotations
 
 import os
+import urllib.parse
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QHBoxLayout, QLabel, QTextBrowser, QVBoxLayout,
+    QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
+    QPlainTextEdit, QPushButton, QTextBrowser, QVBoxLayout,
 )
 
 from .. import __release_date__, __version__
 
-# --- Contact details (edit these) -----------------------------------------
+# --- Details --------------------------------------------------------------
 DEVELOPER = "Ji-Eun Lee Music Academy, LLC"
-CONTACT_NAME = "Ji-Eun Lee Music Academy"
-CONTACT_EMAIL = ""        # e.g. "support@example.com"
-CONTACT_WEBSITE = ""      # e.g. "https://example.com"
-CONTACT_PHONE = ""        # e.g. "(555) 123-4567"
+CONTACT_EMAIL = "doug@fishersmusic.com"
 
 
 def _icon_path() -> str:
@@ -56,34 +55,59 @@ class AboutDialog(QDialog):
 
 
 class ContactDialog(QDialog):
+    """A small contact form that composes an email in the user's mail app."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Contact")
-        self.setMinimumWidth(380)
+        self.resize(480, 440)
         layout = QVBoxLayout(self)
 
-        rows = [f"<h3>{CONTACT_NAME or DEVELOPER}</h3>"]
-        if CONTACT_EMAIL:
-            rows.append(f"<p><b>Email:</b> "
-                        f"<a href='mailto:{CONTACT_EMAIL}'>{CONTACT_EMAIL}</a></p>")
-        if CONTACT_WEBSITE:
-            rows.append(f"<p><b>Web:</b> "
-                        f"<a href='{CONTACT_WEBSITE}'>{CONTACT_WEBSITE}</a></p>")
-        if CONTACT_PHONE:
-            rows.append(f"<p><b>Phone:</b> {CONTACT_PHONE}</p>")
-        if not (CONTACT_EMAIL or CONTACT_WEBSITE or CONTACT_PHONE):
-            rows.append("<p style='color:#777;'>Contact details coming soon.</p>")
+        intro = QLabel("Send us a message. This opens your email app with the "
+                       f"message addressed to {CONTACT_EMAIL}, ready to send.")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
 
-        label = QLabel("".join(rows))
-        label.setTextFormat(Qt.RichText)
-        label.setOpenExternalLinks(True)
-        label.setWordWrap(True)
-        layout.addWidget(label)
+        form = QFormLayout()
+        self.name_edit = QLineEdit()
+        self.email_edit = QLineEdit()
+        self.email_edit.setPlaceholderText("so we can reply")
+        self.subject_edit = QLineEdit("QLab Flash — Support")
+        form.addRow("Your name:", self.name_edit)
+        form.addRow("Your email:", self.email_edit)
+        form.addRow("Subject:", self.subject_edit)
+        layout.addLayout(form)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Close)
-        buttons.rejected.connect(self.reject)
-        buttons.accepted.connect(self.accept)
-        layout.addWidget(buttons)
+        layout.addWidget(QLabel("Message:"))
+        self.message_edit = QPlainTextEdit()
+        layout.addWidget(self.message_edit, 1)
+
+        row = QHBoxLayout()
+        row.addStretch(1)
+        close_btn = QPushButton("Cancel")
+        close_btn.clicked.connect(self.reject)
+        send_btn = QPushButton("Compose Email")
+        send_btn.setDefault(True)
+        send_btn.clicked.connect(self._compose)
+        row.addWidget(close_btn)
+        row.addWidget(send_btn)
+        layout.addLayout(row)
+
+    def _compose(self):
+        lines = []
+        who = " ".join(p for p in (self.name_edit.text().strip(),
+                                   f"<{self.email_edit.text().strip()}>"
+                                   if self.email_edit.text().strip() else "")
+                       if p)
+        if who:
+            lines.append(f"From: {who}")
+            lines.append("")
+        lines.append(self.message_edit.toPlainText())
+        query = urllib.parse.urlencode(
+            {"subject": self.subject_edit.text(), "body": "\n".join(lines)},
+            quote_via=urllib.parse.quote)
+        QDesktopServices.openUrl(QUrl(f"mailto:{CONTACT_EMAIL}?{query}"))
+        self.accept()
 
 
 class HelpDialog(QDialog):
