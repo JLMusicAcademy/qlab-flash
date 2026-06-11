@@ -1,4 +1,4 @@
-"""Tests for the dynamic look-anchor detection at arbitrary nesting depths."""
+"""Tests for the dynamic anchor-cue detection at arbitrary nesting depths."""
 
 from qlabflash.config import Config
 from qlabflash.model import Cue, GridModel
@@ -45,9 +45,9 @@ def test_three_levels_deep():
     assert [a.uid for a in m.anchors()] == ["c1"]
 
 
-def test_act_spanning_two_cues_splits_into_two_looks():
+def test_act_spanning_two_cues_splits_into_two_cues():
     # Act 1 contains Cue 1 and Cue 2, each with its own Ch1/Ch2. The Act has
-    # duplicate channels, so it must NOT be a look; the two cues become looks.
+    # duplicate channels, so it must NOT be an anchor; the two cues each carry checkboxes.
     top = [grp("act", "Act 1",
                grp("c1", "Cue 1", mic("m1a", 1), mic("m2a", 2)),
                grp("c2", "Cue 2", mic("m1b", 1), mic("m2b", 2)))]
@@ -148,8 +148,8 @@ def test_x32_placeholder_channel_is_counted_and_skipped():
 
 
 def test_set_channel_name_renames_every_cue_for_that_channel():
-    # Two looks, each with channel 1 + 2 cues. Renaming channel 1 -> "Annie"
-    # must rename channel-1's cue in BOTH looks (and leave channel 2 alone).
+    # Two cues, each with channel 1 + 2 cues. Renaming channel 1 -> "Annie"
+    # must rename channel-1's cue in BOTH cues (and leave channel 2 alone).
     top = [
         grp("L1", "Cue 1", mic("a1", 1), mic("a2", 2)),
         grp("L2", "Cue 2", mic("b1", 1), mic("b2", 2)),

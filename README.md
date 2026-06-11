@@ -90,7 +90,7 @@ console channel strip), and the names persist between sessions.
 **Renaming a mic does three things on Submit:**
 
 1. Labels that column in QLab Flash.
-2. Renames that channel's **cue in every look** in QLab (e.g. every `Mic 1` cue
+2. Renames that channel's **cue in every cue** in QLab (e.g. every `Mic 1` cue
    becomes "Annie") — handy since shows usually define all 32 mics in each cue.
 3. Sets the **channel name on the X32** (the scribble strip), via
    `/ch/NN/config/name`, if you've entered the mixer's IP under **Mixer…**.
@@ -114,8 +114,8 @@ QLab when you hit **Submit** (alongside any mic changes). Unlike mic names
 workspace.** It's usually faster than clicking through cues one-at-a-time in
 QLab: double-click, type, Enter, down-arrow, repeat.
 
-Use **Expand all** / **Collapse to looks** to switch between the full hierarchy
-and the compact one-row-per-look view. Edited mic cells are tinted amber; live
+Use **Expand all** / **Collapse to cues** to switch between the full hierarchy
+and the compact one-row-per-cue view. Edited mic cells are tinted amber; live
 (unmuted) mics are tinted green. The footer shows the unsaved-change count.
 
 ---
@@ -179,28 +179,28 @@ arrange your show any particular way.
 
 - **A mic is a Network (OSC) cue** whose message turns an X32 channel on/off,
   e.g. `/ch/03/mix/on 1` — wherever it lives in the tree.
-- **A cue becomes a "mic look"** (and gets the 32 checkboxes) when its subtree
+- **A cue carries the 32 checkboxes** when its subtree
   holds mic cues with no duplicate channel numbers. The *highest* such cue wins.
-  If a container holds two cues that each have a "Ch 1", it can't be one look,
-  so QLab Flash descends until each look has a clean set of channels.
+  If a container holds two cues that each have a "Ch 1", it can't carry one set,
+  so QLab Flash descends until each cue has a clean set of channels.
 
 That single rule handles every layout, at any depth:
 
 ```
-Cue 12 → mics                         ✓ Cue 12 is the look
-Cue 12 → Mics group → mics            ✓ Cue 12 is the look
-Cue 12 → Group A → Mics → mics        ✓ Cue 12 is the look  (any depth)
-Act 1 → Cue 1, Cue 2 → … → mics       ✓ Cue 1 and Cue 2 are each a look
+Cue 12 → mics                         ✓ Cue 12 gets the checkboxes
+Cue 12 → Mics group → mics            ✓ Cue 12 gets the checkboxes
+Cue 12 → Group A → Mics → mics        ✓ Cue 12 gets the checkboxes (any depth)
+Act 1 → Cue 1, Cue 2 → … → mics       ✓ Cue 1 and Cue 2 each get checkboxes
 ```
 
-Look rows show the aggregated 32 checkboxes (this is what you bulk-edit).
-Expand a look and you'll see its real cues underneath, mirroring QLab. Cues that
+Mic-cue rows show the aggregated 32 checkboxes (this is what you bulk-edit).
+Expand one and you'll see its child cues underneath, mirroring QLab. Cues that
 aren't mic cues — audio, lights, video, memos, structural groups — are simply
 **blank** under the mic columns.
 
-**It updates existing per-channel cues; it does not create new ones.** If a look
-has no cue for, say, mic 7, that column is blank for that look and skipped on
-submit. (So your show needs one channel-on cue per mic per look — the normal way
+**It updates existing per-channel cues; it does not create new ones.** If a cue
+has no sub-cue for, say, mic 7, that column is blank for it and skipped on
+submit. (So your show needs one channel-on cue per mic per cue — the normal way
 this is built.)
 
 If your wiring is different, **everything fragile is configurable** — see below
@@ -260,7 +260,7 @@ confirm the round-trip before doing a whole show.
 qlabflash/
   osc.py          # dependency-free OSC 1.0 codec + SLIP framing for TCP
   qlab.py         # QLab OSC client over TCP/UDP (discover, connect, read/write)
-  model.py        # cue tree <-> worksheet, dynamic look-anchor detection
+  model.py        # cue tree <-> worksheet, dynamic anchor-cue detection
   session.py      # connect -> load worksheet -> submit (mics + names)
   config.py       # all tunable settings
   mock_qlab.py    # simulated QLab for demo mode and tests

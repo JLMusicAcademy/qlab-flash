@@ -2,7 +2,7 @@
 
 Column 0 is the cue name (expandable tree, double-click to rename — the change
 is pushed to QLab on submit). Columns 1..N are mics: a checkbox appears only on
-rows that actually own that channel (look anchors, and the individual mic cues
+rows that actually own that channel (anchor cues, and the individual mic cues
 beneath them); every other row is blank under the mic columns.
 """
 
@@ -18,12 +18,12 @@ from ..model import GridModel, RowNode
 
 DIRTY_BRUSH = QBrush(QColor(255, 244, 200))      # edited (mic or name)
 UNMUTED_BRUSH = QBrush(QColor(214, 245, 214))     # live mic
-ANCHOR_BRUSH = QBrush(QColor(232, 238, 248))      # a "look" row's name cell
+ANCHOR_BRUSH = QBrush(QColor(232, 238, 248))      # an anchor cue's name cell
 
 
 class CueTreeModel(QAbstractItemModel):
     # Emitted after mic states change so the view can repaint aliased cells
-    # (a look anchor and the mic cue beneath it share one underlying state).
+    # (an anchor cue and the mic cue beneath it share one underlying state).
     micChanged = Signal()
 
     UNDO_LIMIT = 30

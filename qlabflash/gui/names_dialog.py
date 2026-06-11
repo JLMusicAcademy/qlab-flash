@@ -20,8 +20,9 @@ class NamesDialog(QDialog):
 
         layout = QVBoxLayout(self)
         info = QLabel("Name each mic (e.g. an actor/role). The name shows in the "
-                      "column header and renames that channel's cue in every "
-                      "look — pushed to QLab on Submit.")
+                      "column header, renames that mic's cue everywhere it "
+                      "appears, and sets the X32 channel name — all pushed on "
+                      "Submit.")
         info.setWordWrap(True)
         layout.addWidget(info)
 

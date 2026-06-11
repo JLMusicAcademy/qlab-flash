@@ -15,7 +15,7 @@ def mock_and_client(request):
     # Exercise both transports. Port 0 lets the OS pick a free port.
     transport = request.param
     mock = MockQLab(host="127.0.0.1", port=0, transport=transport,
-                    num_looks=4, mic_count=32)
+                    num_cues=4, mic_count=32)
     client = QLabClient(host="127.0.0.1", port=mock.port, transport=transport,
                         reply_timeout=3.0)
     try:
@@ -41,13 +41,13 @@ def test_load_grid_and_submit(mock_and_client):
 
     model = session.load_grid()
     anchors = model.anchors()
-    assert len(anchors) == 4                  # 4 cue groups become looks
-    # Each look has all 32 mic cells, even though mics are nested in a "Mics"
+    assert len(anchors) == 4                  # 4 cue groups carry mic checkboxes
+    # Each carries all 32 mic cells, even though mics are nested in a "Mics"
     # group alongside audio/lights siblings.
     for a in anchors:
         assert len(a.cells) == 32
 
-    # Flip channel 5 in look 1 and submit.
+    # Flip channel 5 in the first cue and submit.
     target = anchors[0].cells[5]
     new_state = not target.unmuted
     target.unmuted = new_state
@@ -74,7 +74,7 @@ def test_large_show_over_tcp():
     # A realistically large show: the /cueLists reply is far bigger than a UDP
     # datagram could hold. TCP + SLIP must stream it whole.
     mock = MockQLab(host="127.0.0.1", port=0, transport="tcp",
-                    num_looks=60, mic_count=32)
+                    num_cues=60, mic_count=32)
     client = QLabClient(host="127.0.0.1", port=mock.port, transport="tcp",
                         reply_timeout=5.0)
     try:
@@ -90,7 +90,7 @@ def test_large_show_over_tcp():
 
 def test_rename_cues_over_tcp():
     mock = MockQLab(host="127.0.0.1", port=0, transport="tcp",
-                    num_looks=3, mic_count=8)
+                    num_cues=3, mic_count=8)
     client = QLabClient(host="127.0.0.1", port=mock.port, transport="tcp",
                         reply_timeout=5.0)
     try:

@@ -5,8 +5,8 @@ It speaks just enough of QLab's OSC dictionary to exercise the whole app
 real copy of QLab. Used by the test-suite and by the GUI's "Demo" mode so the
 interface can be driven on any machine.
 
-The simulated show: one cue list with several "look" group cues, each holding
-32 Network cues that send ``/ch/NN/mix/on {0|1}`` to an X32.
+The simulated show: one cue list with several group cues, each holding 32
+Network cues that send ``/ch/NN/mix/on {0|1}`` to an X32.
 """
 
 from __future__ import annotations
@@ -21,29 +21,29 @@ from . import osc
 WORKSPACE_ID = "mock-ws-1"
 
 
-def _make_show(num_looks: int = 6, mic_count: int = 32):
+def _make_show(num_cues: int = 6, mic_count: int = 32):
     """Build the cue tree and the per-cue OSC message text store."""
     cue_lists: List[dict] = []
     texts: Dict[str, str] = {}
 
     list_cues = []
-    for look in range(1, num_looks + 1):
+    for cue in range(1, num_cues + 1):
         # 32 mic cues live inside a nested "Mics" group, mirroring a typical
         # show: Cue N (group) -> { Mics (group of 32), Audio, Lights, Video }.
         mic_children = []
         for chan in range(1, mic_count + 1):
-            uid = f"net-{look}-{chan}"
-            # Open mics: a rotating handful per look, everything else muted.
-            on = 1 if (chan % num_looks) == (look % num_looks) else 0
+            uid = f"net-{cue}-{chan}"
+            # Open mics: a rotating handful per cue, everything else muted.
+            on = 1 if (chan % num_cues) == (cue % num_cues) else 0
             texts[uid] = f"/ch/{chan:02d}/mix/on {on}"
             mic_children.append({
                 "uniqueID": uid,
-                "number": f"{look}.{chan}",
+                "number": f"{cue}.{chan}",
                 "name": f"Ch {chan} {'ON' if on else 'OFF'}",
                 "type": "Network",
             })
         mics_group = {
-            "uniqueID": f"mics-{look}",
+            "uniqueID": f"mics-{cue}",
             "number": "",
             "name": "Mics",
             "type": "Group",
@@ -51,25 +51,25 @@ def _make_show(num_looks: int = 6, mic_count: int = 32):
         }
         # Non-mic siblings inside the cue group (must be ignored by the grid).
         siblings = [
-            {"uniqueID": f"aud-{look}", "number": "", "name": "Audio",
+            {"uniqueID": f"aud-{cue}", "number": "", "name": "Audio",
              "type": "Audio"},
-            {"uniqueID": f"lx-{look}", "number": "", "name": "Lights",
+            {"uniqueID": f"lx-{cue}", "number": "", "name": "Lights",
              "type": "Network"},
         ]
-        texts[f"lx-{look}"] = "/eos/chan/1/out 100"  # non-mic OSC, won't match
+        texts[f"lx-{cue}"] = "/eos/chan/1/out 100"  # non-mic OSC, won't match
         list_cues.append({
-            "uniqueID": f"group-{look}",
-            "number": str(look),
-            "name": f"Cue {look}",
+            "uniqueID": f"group-{cue}",
+            "number": str(cue),
+            "name": f"Cue {cue}",
             "type": "Group",
             "cues": [mics_group] + siblings,
         })
         # A standalone non-group cue sprinkled between cues (should be hidden,
         # since it has no mics).
         list_cues.append({
-            "uniqueID": f"note-{look}",
+            "uniqueID": f"note-{cue}",
             "number": "",
-            "name": f"Note {look}",
+            "name": f"Note {cue}",
             "type": "Memo",
         })
 
@@ -99,8 +99,8 @@ class MockQLab:
     """A simulated QLab. Defaults to TCP (like the real app); supports UDP too."""
 
     def __init__(self, host: str = "127.0.0.1", port: int = 53000,
-                 transport: str = "tcp", num_looks: int = 6, mic_count: int = 32):
-        self.cue_lists, self.texts, self._index = _make_show(num_looks, mic_count)
+                 transport: str = "tcp", num_cues: int = 6, mic_count: int = 32):
+        self.cue_lists, self.texts, self._index = _make_show(num_cues, mic_count)
         self.transport = transport.lower()
         self._running = True
 

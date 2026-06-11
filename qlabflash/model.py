@@ -5,23 +5,23 @@ QLab returns plus a lookup of each cue's OSC message text, it mirrors QLab's
 hierarchy as a tree of rows and decides — dynamically, for any workspace shape —
 which cues own a set of mics.
 
-How a "mic look" is found (works at any nesting depth)
-------------------------------------------------------
-A *mic cue* is a leaf cue whose OSC message matches the channel pattern, e.g.
-``/ch/03/mix/on 1``. We want to attach the 32 mic checkboxes to the cue the user
-thinks of as "the cue" — but that could be a top-level group, a group three
-levels down, or the mic cue itself, and we can't assume.
+How a mic cue is found (works at any nesting depth)
+---------------------------------------------------
+A *mic channel cue* is a leaf cue whose OSC message matches the channel pattern,
+e.g. ``/ch/03/mix/on 1``. We want to attach the 32 mic checkboxes to the cue the
+user thinks of as "the cue" — but that could be a top-level group, a group three
+levels down, or the channel cue itself, and we can't assume.
 
-The rule: a cue is a **look anchor** if its subtree contains mic cues with *no
+The rule: a cue is an **anchor cue** if its subtree contains mic cues with *no
 duplicated channel numbers*, and it is the highest such cue (its parent's
-subtree does have duplicates, meaning the parent spans more than one look). This
+subtree does have duplicates, meaning the parent spans more than one cue). This
 makes the grouping fully dynamic:
 
-* ``Cue → mics``                      → Cue is the look
-* ``Cue → Mics group → mics``         → Cue is the look
-* ``Cue → G2 → Mics group → mics``    → Cue is the look
-* ``Act → Cue1, Cue2 → … → mics``     → Act spans two looks (duplicate channels),
-                                         so Cue1 and Cue2 each become looks.
+* ``Cue → mics``                      → Cue gets the checkboxes
+* ``Cue → Mics group → mics``         → Cue gets the checkboxes
+* ``Cue → G2 → Mics group → mics``    → Cue gets the checkboxes
+* ``Act → Cue1, Cue2 → … → mics``     → Act spans two cues (duplicate channels),
+                                         so Cue1 and Cue2 each get checkboxes.
 
 A checked box means unmuted (channel ON); an unchecked box means muted (OFF).
 """
@@ -105,7 +105,7 @@ class RowNode:
 
     # The mic cell this cue carries itself, if it is an individual mic cue.
     own_cell: Optional[MicCell] = None
-    # Channel -> MicCell shown on this row (aggregated set on a look anchor, the
+    # Channel -> MicCell shown on this row (aggregated set on an anchor cue, the
     # single own cell on a mic cue, empty for everything else).
     cells: Dict[int, MicCell] = field(default_factory=dict)
 
@@ -250,7 +250,7 @@ class GridModel:
         cells = self._subtree_cells(node)
         channels = [c.channel for c in cells]
         node._unique = bool(channels) and len(channels) == len(set(channels))
-        # Highest cue whose channels are all distinct = the look anchor.
+        # Highest cue whose channels are all distinct = the anchor cue.
         node.is_anchor = node._unique and not parent_unique
 
         if node.is_anchor:
@@ -316,7 +316,7 @@ class GridModel:
         return sum(1 for n in self.iter_rows() if n.name_dirty and n.uid)
 
     def nodes_for_channel(self, channel: int) -> List[RowNode]:
-        """Every mic cue (across all looks) for a given channel."""
+        """Every mic cue (across all cues) for a given channel."""
         return [n for n in self.iter_rows()
                 if n.own_cell is not None and n.own_cell.channel == channel]
 

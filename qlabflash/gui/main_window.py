@@ -67,16 +67,16 @@ class MainWindow(QMainWindow):
         self.expand_btn = QPushButton("Expand all")
         self.expand_btn.clicked.connect(lambda: self.tree.expandAll())
         top.addWidget(self.expand_btn)
-        self.collapse_btn = QPushButton("Collapse to looks")
+        self.collapse_btn = QPushButton("Collapse to cues")
         self.collapse_btn.setToolTip(
-            "Collapse so each mic 'look' shows as one row with its 32 mics.")
-        self.collapse_btn.clicked.connect(self._collapse_to_looks)
+            "Collapse so each mic cue shows as one row with its 32 mics.")
+        self.collapse_btn.clicked.connect(self._collapse_to_cues)
         top.addWidget(self.collapse_btn)
 
         self.names_btn = QPushButton("Mic names…")
         self.names_btn.setToolTip(
             "Name your mics (e.g. actor/role names). A name shows in the column "
-            "header, renames that channel's cue in every look, and sets the "
+            "header, renames that mic's cue everywhere it appears, and sets the "
             "channel name on the X32 — all applied when you Submit.")
         self.names_btn.clicked.connect(self._edit_names)
         top.addWidget(self.names_btn)
@@ -149,7 +149,7 @@ class MainWindow(QMainWindow):
         bottom.addWidget(self.submit_btn)
         self.submit_all_btn = QPushButton("Submit ALL mics")
         self.submit_all_btn.setToolTip(
-            "Write every mic in every look, not just the ones you changed "
+            "Write every mic in every cue, not just the ones you changed "
             "(plus any name edits).")
         self.submit_all_btn.clicked.connect(lambda: self._submit(only_dirty=False))
         bottom.addWidget(self.submit_all_btn)
@@ -224,12 +224,12 @@ class MainWindow(QMainWindow):
             if old is not None:
                 old.deleteLater()
             self._format_tree()
-            self._collapse_to_looks()
+            self._collapse_to_cues()
             self._set_busy(False)
             self._refresh_dirty()
-            looks = len(model.anchors())
+            mic_cues = len(model.anchors())
             total = sum(1 for _ in model.iter_rows())
-            if looks == 0 and model.placeholder_count:
+            if mic_cues == 0 and model.placeholder_count:
                 msg = (f"Found {model.placeholder_count} On/Off cue(s), but their "
                        f"Channel is a {{channel}} placeholder. In QLab, set each "
                        f"cue's Channel to a number (01–32) so it maps to a mic.")
@@ -237,7 +237,7 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Cues need a channel number", msg)
             else:
                 self.statusBar().showMessage(
-                    f"Loaded {looks} mic look(s) across {total} cue(s).")
+                    f"Loaded {mic_cues} cue(s) with mics, {total} cue(s) total.")
 
         run_async(work, on_done=done, on_error=self._on_error,
                   on_progress=lambda msg: self.statusBar().showMessage(msg))
@@ -257,8 +257,8 @@ class MainWindow(QMainWindow):
                 Qt.Horizontal, 1, self.tree_model.columnCount() - 1)
 
     # -- expansion ----------------------------------------------------------
-    def _collapse_to_looks(self) -> None:
-        """Expand structure down to look rows, but collapse each look's mics."""
+    def _collapse_to_cues(self) -> None:
+        """Expand structure down to mic-cue rows, collapsing each one's mics."""
         if self.tree_model is None:
             return
 
@@ -294,7 +294,7 @@ class MainWindow(QMainWindow):
             self, f"Name mic {chan}",
             f"Name for mic {chan} (e.g. an actor/role).\n\nOn Submit this will:\n"
             f"  • label this column,\n"
-            f"  • rename mic {chan}'s cue in every look in QLab,\n"
+            f"  • rename mic {chan}'s cue everywhere it appears in QLab,\n"
             f"  • set {mixer}.",
             text=current)
         if not ok or name.strip() == current:
@@ -357,7 +357,7 @@ class MainWindow(QMainWindow):
         self._refresh_dirty()
 
     def _on_mic_changed(self) -> None:
-        # Repaint so aliased cells (a look and the mic cue beneath it) match.
+        # Repaint so aliased cells (an anchor cue and the mic cue beneath) match.
         self.tree.viewport().update()
         self._refresh_dirty()
 
