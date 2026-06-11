@@ -6,7 +6,7 @@ import os
 from typing import Optional
 
 from PySide6.QtCore import Qt, QModelIndex, QObject, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMainWindow,
     QMessageBox, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
 from ..config import Config
 from ..qlab import QLabClient
 from ..session import WorkspaceSession
+from .about import AboutDialog, ContactDialog, HelpDialog
 from .diagnose_dialog import DiagnoseDialog
 from .header import MicHeaderView
 from .mixer_dialog import MixerDialog
@@ -48,8 +49,27 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"QLab Flash — {workspace_name}")
         self.resize(1150, 720)
         self._build_ui()
+        self._build_menus()
         self._wire_logging()
         self._load_grid(0)
+
+    # -- menu bar -----------------------------------------------------------
+    def _build_menus(self) -> None:
+        help_menu = self.menuBar().addMenu("&Help")
+
+        about_act = QAction("About QLab Flash", self)
+        about_act.setMenuRole(QAction.AboutRole)   # macOS moves this to the app menu
+        about_act.triggered.connect(lambda: AboutDialog(self).exec())
+        help_menu.addAction(about_act)
+
+        help_act = QAction("QLab Flash Help", self)
+        help_act.setShortcut(QKeySequence.HelpContents)
+        help_act.triggered.connect(lambda: HelpDialog(self).exec())
+        help_menu.addAction(help_act)
+
+        contact_act = QAction("Contact", self)
+        contact_act.triggered.connect(lambda: ContactDialog(self).exec())
+        help_menu.addAction(contact_act)
 
     # -- UI construction ----------------------------------------------------
     def _build_ui(self) -> None:
