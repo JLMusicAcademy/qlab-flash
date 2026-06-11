@@ -1,34 +1,59 @@
-"""Item delegate: show selection as a light tint, not a solid fill.
+"""Item delegate: centered checkboxes + a light selection tint.
 
-The default view selection paints a solid highlight that hides the checkbox
-underneath. This delegate paints every cell normally (background, checkbox,
-text), draws faint grid lines, then lays a *translucent* highlight over selected
-cells — so a dragged selection reads clearly while the checkmarks stay visible,
-with no seams or stray lines between cells.
+* Checkboxes are drawn (and clicked) centered in their cell instead of the
+  default left-aligned position. We strip the built-in check indicator in
+  ``initStyleOption`` (so the base paint never draws the left one) and render a
+  centered one ourselves.
+* Selection is a translucent tint rather than a solid fill, so the checkmarks
+  stay visible and adjacent selected cells blend with no internal lines.
+* Faint grid lines keep the 32 mic columns readable.
 """
 
 from __future__ import annotations
 
+from PySide6.QtCore import QEvent, QRect, Qt
 from PySide6.QtGui import QColor, QPen
-from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
+from PySide6.QtWidgets import (
+    QApplication, QStyle, QStyledItemDelegate, QStyleOptionViewItem,
+)
 
 GRID_COLOR = QColor(0, 0, 0, 30)        # faint spreadsheet grid lines
 SELECTION_ALPHA = 60                    # translucency of the selection tint
 
 
 class SelectionOutlineDelegate(QStyledItemDelegate):
+    def initStyleOption(self, option, index):
+        super().initStyleOption(option, index)
+        # Drop the built-in (left-aligned) checkbox; we draw it centered.
+        option.features &= ~QStyleOptionViewItem.HasCheckIndicator
+
+    # -- helpers ------------------------------------------------------------
+    @staticmethod
+    def _is_checkable(index) -> bool:
+        return (bool(index.flags() & Qt.ItemIsUserCheckable)
+                and index.data(Qt.CheckStateRole) is not None)
+
+    def _check_rect(self, option, index) -> QRect:
+        """Centered checkbox rect, sized from the style's indicator metrics."""
+        style = option.widget.style() if option.widget else QApplication.style()
+        w = style.pixelMetric(QStyle.PM_IndicatorWidth, None, option.widget)
+        h = style.pixelMetric(QStyle.PM_IndicatorHeight, None, option.widget)
+        x = option.rect.x() + (option.rect.width() - w) // 2
+        y = option.rect.y() + (option.rect.height() - h) // 2
+        return QRect(x, y, w, h)
+
+    # -- painting -----------------------------------------------------------
     def paint(self, painter, option, index):
         selected = bool(option.state & QStyle.State_Selected)
 
-        # Paint the cell as if it were not selected, so the checkbox and our
-        # amber/green backgrounds remain fully visible.
         opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
         opt.state = option.state & ~QStyle.State_Selected
-        super().paint(painter, opt, index)
+        super().paint(painter, opt, index)        # background + text, no checkbox
 
-        # Faint grid lines (right + bottom of every cell) so the 32 mic columns
-        # are easy to read across.
+        if self._is_checkable(index):
+            self._paint_centered_check(painter, option, index)
+
+        # Faint grid lines so the mic columns are easy to read across.
         painter.save()
         painter.setPen(QPen(GRID_COLOR, 1))
         r = option.rect
@@ -41,3 +66,48 @@ class SelectionOutlineDelegate(QStyledItemDelegate):
             tint = QColor(option.palette.highlight().color())
             tint.setAlpha(SELECTION_ALPHA)
             painter.fillRect(option.rect, tint)
+
+    def _paint_centered_check(self, painter, option, index):
+        widget = option.widget
+        style = widget.style() if widget else QApplication.style()
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.rect = self._check_rect(option, index)
+        cs = Qt.CheckState(index.data(Qt.CheckStateRole))
+        state = opt.state & ~(QStyle.State_Selected | QStyle.State_On
+                              | QStyle.State_Off | QStyle.State_NoChange)
+        if cs == Qt.Checked:
+            state |= QStyle.State_On
+        elif cs == Qt.Unchecked:
+            state |= QStyle.State_Off
+        else:
+            state |= QStyle.State_NoChange
+        opt.state = state | QStyle.State_Enabled
+        style.drawPrimitive(QStyle.PE_IndicatorItemViewItemCheck, opt, painter,
+                            widget)
+
+    # -- clicking (toggle when the centered checkbox is clicked) ------------
+    def editorEvent(self, event, model, option, index):
+        if not self._is_checkable(index) or not (index.flags() & Qt.ItemIsEnabled):
+            return super().editorEvent(event, model, option, index)
+
+        et = event.type()
+        if et == QEvent.MouseButtonPress:
+            # Note whether the press hit the checkbox, but don't consume it so
+            # drag-to-select still works.
+            self._pressed_on_check = self._check_rect(option, index).contains(
+                event.position().toPoint())
+            return False
+        if et == QEvent.MouseButtonRelease:
+            hit = self._check_rect(option, index).contains(
+                event.position().toPoint())
+            if getattr(self, "_pressed_on_check", False) and hit:
+                self._pressed_on_check = False
+                value = index.data(Qt.CheckStateRole)
+                new = (Qt.Unchecked if Qt.CheckState(value) == Qt.Checked
+                       else Qt.Checked)
+                model.setData(index, new, Qt.CheckStateRole)
+                return True
+            self._pressed_on_check = False
+            return False
+        return super().editorEvent(event, model, option, index)
