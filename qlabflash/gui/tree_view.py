@@ -10,7 +10,7 @@ en masse from the toolbar, the right-click menu, or the keyboard:
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import QAbstractItemView, QMenu, QTreeView
 
 from .selection_delegate import SelectionOutlineDelegate
@@ -21,6 +21,13 @@ class CueTreeView(QTreeView):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        # Throttle the selection-count signal: during a rubber-band drag the
+        # selection changes on every mouse-move, so we recompute at most every
+        # 40 ms (and the count itself is O(ranges), not O(cells)).
+        self._sel_timer = QTimer(self)
+        self._sel_timer.setSingleShot(True)
+        self._sel_timer.setInterval(40)
+        self._sel_timer.timeout.connect(self._emit_selection_count)
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.setItemDelegate(SelectionOutlineDelegate(self))
@@ -65,7 +72,22 @@ class CueTreeView(QTreeView):
 
     def selectionChanged(self, selected, deselected):
         super().selectionChanged(selected, deselected)
-        count = sum(1 for i in self._selected() if i.column() != 0)
+        # Don't materialize the whole selection here — that's O(N) per move and
+        # O(N^2) across a drag. Just (re)arm the throttle; the count is computed
+        # from selection ranges when it fires.
+        self._sel_timer.start()
+
+    def _emit_selection_count(self):
+        model = self.selectionModel()
+        if model is None:
+            self.selectionChangedCount.emit(0)
+            return
+        # Count selected mic cells from the selection *ranges* (O(ranges)),
+        # excluding the name column (0). No per-index list is built.
+        count = 0
+        for r in model.selection():
+            width = sum(1 for c in range(r.left(), r.right() + 1) if c != 0)
+            count += (r.bottom() - r.top() + 1) * width
         self.selectionChangedCount.emit(count)
 
     def _context_menu(self, pos):

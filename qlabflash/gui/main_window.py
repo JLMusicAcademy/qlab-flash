@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from typing import Optional
 
-from PySide6.QtCore import Qt, QModelIndex, QObject, Signal
+from PySide6.QtCore import Qt, QModelIndex, QObject, QTimer, Signal
 from PySide6.QtGui import QAction, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QMainWindow,
@@ -45,6 +45,15 @@ class MainWindow(QMainWindow):
         self.mock = mock  # keep the demo server alive for the window's lifetime
         self.session = WorkspaceSession(client, workspace_id, config)
         self.tree_model: Optional[CueTreeModel] = None
+
+        # Recounting unsaved changes walks the whole cue tree, so we coalesce
+        # the many signals a single gesture fires (each click emits dataChanged
+        # *and* micChanged; a bulk edit emits one per cell) into one refresh on
+        # the next event-loop tick.
+        self._dirty_timer = QTimer(self)
+        self._dirty_timer.setSingleShot(True)
+        self._dirty_timer.setInterval(0)
+        self._dirty_timer.timeout.connect(self._do_refresh_dirty)
 
         self.setWindowTitle(f"QLab Flash — {workspace_name}")
         self.resize(1150, 720)
@@ -438,6 +447,11 @@ class MainWindow(QMainWindow):
         return self.tree_model.mic_dirty_count() + self.tree_model.name_dirty_count()
 
     def _refresh_dirty(self) -> None:
+        # Coalesce: many edit signals in one gesture collapse to a single
+        # recount on the next tick instead of walking the tree for each.
+        self._dirty_timer.start()
+
+    def _do_refresh_dirty(self) -> None:
         if not self.tree_model:
             self.dirty_label.setText("No changes")
             self.submit_btn.setEnabled(False)
