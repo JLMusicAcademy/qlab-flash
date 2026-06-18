@@ -10,7 +10,7 @@ en masse from the toolbar, the right-click menu, or the keyboard:
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QPersistentModelIndex, Qt, QTimer, Signal
 from PySide6.QtWidgets import QAbstractItemView, QMenu, QTreeView
 
 from .selection_delegate import SelectionOutlineDelegate
@@ -18,9 +18,15 @@ from .selection_delegate import SelectionOutlineDelegate
 
 class CueTreeView(QTreeView):
     selectionChangedCount = Signal(int)
+    # Emitted with the hovered mic channel (>=1), or -1 when not over a mic.
+    hoverCell = Signal(int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._hover_col = None
+        # Track mouse moves (even with no button down) for the hover crosshair.
+        self.setMouseTracking(True)
+        self.viewport().setMouseTracking(True)
         # Throttle the selection-count signal: during a rubber-band drag the
         # selection changes on every mouse-move, so we recompute at most every
         # 40 ms (and the count itself is O(ranges), not O(cells)).
@@ -30,7 +36,8 @@ class CueTreeView(QTreeView):
         self._sel_timer.timeout.connect(self._emit_selection_count)
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectItems)
-        self.setItemDelegate(SelectionOutlineDelegate(self))
+        self._delegate = SelectionOutlineDelegate(self)
+        self.setItemDelegate(self._delegate)
         self.setUniformRowHeights(True)
         self.setAlternatingRowColors(True)
         self.setAllColumnsShowFocus(True)
@@ -89,6 +96,31 @@ class CueTreeView(QTreeView):
             width = sum(1 for c in range(r.left(), r.right() + 1) if c != 0)
             count += (r.bottom() - r.top() + 1) * width
         self.selectionChangedCount.emit(count)
+
+    # -- hover crosshair ----------------------------------------------------
+    def mouseMoveEvent(self, event):
+        super().mouseMoveEvent(event)
+        self._update_hover(self.indexAt(event.position().toPoint()))
+
+    def leaveEvent(self, event):
+        super().leaveEvent(event)
+        self._update_hover(None)
+
+    def _update_hover(self, index):
+        col = index.column() if (index is not None and index.isValid()) else None
+        row = (QPersistentModelIndex(index.siblingAtColumn(0))
+               if (index is not None and index.isValid()) else None)
+        # Only repaint/emit when the highlighted cell actually changed.
+        prev_row = self._delegate.active_row
+        same_row = (prev_row is None and row is None) or (
+            prev_row is not None and row is not None
+            and prev_row.row() == row.row() and prev_row.parent() == row.parent())
+        if col == self._delegate.active_col and same_row:
+            return
+        self._delegate.active_col = col
+        self._delegate.active_row = row
+        self.viewport().update()
+        self.hoverCell.emit(col if (col is not None and col >= 1) else -1)
 
     def _context_menu(self, pos):
         if self.model() is None:

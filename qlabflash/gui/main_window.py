@@ -161,12 +161,19 @@ class MainWindow(QMainWindow):
         self.tree.setHeader(self.header)
         self.header.sectionDoubleClicked.connect(self._rename_channel)
         self.tree.selectionChangedCount.connect(self._on_selection_count)
+        self.tree.hoverCell.connect(self._on_hover_cell)
         root.addWidget(self.tree, 1)
 
         # Bottom bar: dirty count + submit.
         bottom = QHBoxLayout()
         self.dirty_label = QLabel("No changes")
         bottom.addWidget(self.dirty_label)
+        bottom.addStretch(1)
+        # Live readout of the mic under the cursor, so you always know which
+        # column you're in on a wide grid.
+        self.readout_label = QLabel("")
+        self.readout_label.setStyleSheet("color: #1a3d6d; font-weight: bold;")
+        bottom.addWidget(self.readout_label)
         bottom.addStretch(1)
         self.log_toggle = QPushButton("Show OSC log")
         self.log_toggle.setCheckable(True)
@@ -393,6 +400,14 @@ class MainWindow(QMainWindow):
     def _on_selection_count(self, count: int) -> None:
         if count:
             self.statusBar().showMessage(f"{count} mic cell(s) selected.")
+
+    def _on_hover_cell(self, channel: int) -> None:
+        if channel is None or channel < 1:
+            self.readout_label.setText("")
+            return
+        name = self.config.label_for(channel)
+        self.readout_label.setText(f"Mic {channel} — {name}" if name
+                                   else f"Mic {channel}")
 
     # -- submit -------------------------------------------------------------
     def _submit(self, only_dirty: bool) -> None:

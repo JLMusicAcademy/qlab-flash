@@ -18,16 +18,37 @@ from PySide6.QtWidgets import (
 )
 
 GRID_COLOR = QColor(0, 0, 0, 30)        # faint spreadsheet grid lines
+BANK_COLOR = QColor(0, 0, 0, 90)        # stronger rule between banks of 8
 SELECTION_ALPHA = 60                    # translucency of the selection tint
+CROSSHAIR_TINT = QColor(60, 120, 220, 28)  # active row/column highlight
+BANK_SIZE = 8                           # X32 groups channels into banks of 8
 
 
 class SelectionOutlineDelegate(QStyledItemDelegate):
+    # The view sets these so we can tint the hovered row/column ("crosshair").
+    # active_col is the hovered mic column (>=1) or None; active_row is a
+    # QPersistentModelIndex on column 0 of the hovered row, or None.
+    active_col = None
+    active_row = None
+
     def initStyleOption(self, option, index):
         super().initStyleOption(option, index)
         # Drop the built-in (left-aligned) checkbox; we draw it centered.
         option.features &= ~QStyleOptionViewItem.HasCheckIndicator
 
     # -- helpers ------------------------------------------------------------
+    def _in_crosshair(self, index) -> bool:
+        """True if this cell is in the hovered column or the hovered row."""
+        col = index.column()
+        if self.active_col is not None and col >= 1 and col == self.active_col:
+            return True
+        row = self.active_row
+        if (row is not None and row.isValid()
+                and index.row() == row.row()
+                and index.parent() == row.parent()):
+            return True
+        return False
+
     @staticmethod
     def _is_checkable(index) -> bool:
         return (bool(index.flags() & Qt.ItemIsUserCheckable)
@@ -50,14 +71,26 @@ class SelectionOutlineDelegate(QStyledItemDelegate):
         opt.state = option.state & ~QStyle.State_Selected
         super().paint(painter, opt, index)        # background + text, no checkbox
 
+        # Crosshair: tint the hovered column and row so it's easy to follow one
+        # mic straight down. Translucent, and painted before the checkbox so the
+        # box stays crisp on top.
+        if self._in_crosshair(index):
+            painter.fillRect(option.rect, CROSSHAIR_TINT)
+
         if self._is_checkable(index):
             self._paint_centered_check(painter, option, index)
 
-        # Faint grid lines so the mic columns are easy to read across.
+        # Faint grid lines so the mic columns are easy to read across; a stronger
+        # rule on bank-of-8 boundaries (channels 8/16/24) as coarse reference.
         painter.save()
-        painter.setPen(QPen(GRID_COLOR, 1))
         r = option.rect
+        chan = index.column()
+        last = index.model().columnCount() - 1 if index.model() else 0
+        bank_edge = chan >= 1 and chan % BANK_SIZE == 0 and chan != last
+        painter.setPen(QPen(BANK_COLOR if bank_edge else GRID_COLOR,
+                            2 if bank_edge else 1))
         painter.drawLine(r.right(), r.top(), r.right(), r.bottom())
+        painter.setPen(QPen(GRID_COLOR, 1))
         painter.drawLine(r.left(), r.bottom(), r.right(), r.bottom())
         painter.restore()
 
